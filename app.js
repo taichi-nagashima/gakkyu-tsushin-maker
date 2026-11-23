@@ -8,7 +8,7 @@
   // ---------- Constants ----------
   // キャッシュ対策バージョン：index.html の <meta name="asset-version"> と各 ?v= と必ず同じ値にする
   // （更新時は index.html と app.js の現在の値をまとめて置換。ずれているとコンソールに警告が出ます）
-  const APP_VERSION = '20261123';
+  const APP_VERSION = '2026112302';
   const KEYS = {
     state: 'home_newsletter_state_v1',
     base: 'home_newsletter_default_schedule_v1',
@@ -1900,6 +1900,8 @@ ${ai.parentsMemo.trim() || '（特になし：日頃の感謝と体調管理の�
         try {
           const data = await cloudAuthRequest('token?grant_type=password', { email, password });
           cloudSetSession(data, email);
+          // ログインできたら、今開いている号をそのままクラウドにも上げる（案内からログインした流れを完結させる）
+          saveToHistory();
           setCloudStatus('ログインしました');
           renderCloudSection();
           showToast('クラウドにログインしました');
