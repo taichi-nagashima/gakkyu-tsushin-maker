@@ -331,12 +331,36 @@ window.HomePngExporter = (() => {
     ctx.lineTo(rx + rw, bodyStartY);
     ctx.stroke();
 
-    // 縦線（ヘッダー行〜下端）
+    // 縦線（ヘッダー行〜下端）。行事・休業日の行では結合セル内の縦罫線を引かない
+    // （プレビューと同じ見た目にする：行事は1〜6限のみ結合、休みは給・清・部まで結合）
+    const schedRows = data.scheduleRows || data.schedule || [];
+    const spanEndCol = (r) => {
+      if (!r || !r.kind || r.kind === 'normal') return -1;
+      return r.kind === 'holiday' ? 10 : 7; // この列番号までの縦線をその行では省略
+    };
     for (let c = 1; c < colWidths.length; c++) {
+      const isInnerDivider = c >= 3 && c <= 10;
+      if (!isInnerDivider) {
+        ctx.beginPath();
+        ctx.moveTo(colXs[c], rowHeaderY);
+        ctx.lineTo(colXs[c], tableY + tableH);
+        ctx.stroke();
+        continue;
+      }
+      // ヘッダー部分は常時
       ctx.beginPath();
       ctx.moveTo(colXs[c], rowHeaderY);
-      ctx.lineTo(colXs[c], tableY + tableH);
+      ctx.lineTo(colXs[c], bodyStartY);
       ctx.stroke();
+      // 各日の行：結合セル内の仕切りだけ省略（行が足りない分は通常行として描く）
+      for (let r = 0; r < 5; r++) {
+        if (c <= spanEndCol(schedRows[r])) continue;
+        const rowY = bodyStartY + r * dayRowH;
+        ctx.beginPath();
+        ctx.moveTo(colXs[c], rowY);
+        ctx.lineTo(colXs[c], rowY + dayRowH);
+        ctx.stroke();
+      }
     }
 
     // 月結合を考慮した横線
@@ -391,12 +415,13 @@ window.HomePngExporter = (() => {
       ctx.textBaseline = 'middle';
       ctx.fillText(weekDates[r]?.dayLabel || '', colXs[1] + colWidths[1] / 2, rowMidY);
 
-      // 行事・休業日は横長の結合セルで表示
+      // 行事・休業日は横長の結合セルで表示（プレビューと同じ範囲：行事は1〜6限、休みは給・清・部まで）
       if (row.kind && row.kind !== 'normal') {
         ctx.font = `700 12px ${FONT_FAMILY}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(row.spanText || '', (colXs[2] + colXs[11]) / 2, rowMidY);
+        const spanRightX = row.kind === 'holiday' ? colXs[11] : colXs[8];
+        ctx.fillText(row.spanText || '', (colXs[2] + spanRightX) / 2, rowMidY);
         ctx.font = `400 10.5px ${FONT_FAMILY}`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
