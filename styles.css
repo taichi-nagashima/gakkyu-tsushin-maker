@@ -1146,3 +1146,35 @@ input:focus, textarea:focus, select:focus {
   cursor: pointer;
 }
 .mt-8 { margin-top: 8px; }
+
+/* ---------- Cloud Login Nudge Modal ---------- */
+.modal-nudge { z-index: 60; }
+.modal-compact { width: 440px; }
+.nudge-lead {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.nudge-note {
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+.nudge-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.nudge-dismiss-row {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  text-align: right;
+}
+.nudge-dismiss-row .link {
+  color: var(--muted);
+  font-weight: 500;
+}
+.nudge-dismiss-row .link:hover {
+  color: var(--text);
+}

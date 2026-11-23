@@ -6,13 +6,17 @@
   'use strict';
 
   // ---------- Constants ----------
+  // キャッシュ対策バージョン：index.html の <meta name="asset-version"> と各 ?v= と必ず同じ値にする
+  // （更新時は index.html と app.js の現在の値をまとめて置換。ずれているとコンソールに警告が出ます）
+  const APP_VERSION = '20261123';
   const KEYS = {
     state: 'home_newsletter_state_v1',
     base: 'home_newsletter_default_schedule_v1',
     history: 'home_newsletter_history_v1',
     api: 'home_newsletter_gemini_api_key_v1',
     welcome: 'home_newsletter_welcome_dismissed_v1',
-    cloud: 'home_newsletter_cloud_session_v1'
+    cloud: 'home_newsletter_cloud_session_v1',
+    cloudNudgeDismissed: 'home_newsletter_cloud_nudge_dismissed_v1'
   };
   const SUPABASE_URL = 'https://ilwspkhaystykdpwiijq.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_3I2MqHL-VQkVgsNeltZ-WQ_AigHp1KV';
@@ -48,6 +52,61 @@
   const $ = (id) => document.getElementById(id);
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const pad2 = (n) => String(n).padStart(2, '0');
+  function safeRun(label, fn) {
+    try {
+      fn();
+    } catch (err) {
+      console.error(`[HOME学級通信] ${label} でエラー:`, err);
+    }
+  }
+  function onEl(target, event, handler) {
+    const el = typeof target === 'string' ? $(target) : target;
+    if (el) el.addEventListener(event, handler);
+  }
+  function checkAppVersion() {
+    const meta = document.querySelector('meta[name="asset-version"]');
+    const htmlVer = meta ? meta.getAttribute('content') : '';
+    if (htmlVer && htmlVer !== APP_VERSION) {
+      console.warn(`[HOME学級通信] バージョン不一致を検知しました (HTML: ${htmlVer}, JS: ${APP_VERSION})。スーパーリロードをおすすめします。`);
+    }
+  }
+
+  // ---------- APIキーの取り方ガイド（独立・最優先で登録） ----------
+  // 「📖 APIキーの取り方を見る」ボタン／AIパネルの「APIキーの取り方を見る」リンクは、
+  // 状態の読み込み・描画・他のイベント登録などで例外が起きても必ず反応するよう、
+  // init() / bindEvents() に依存せず、スクリプト読み込み直後に document への委譲で登録する。
+  function toggleApiKeyGuide(forceOpen) {
+    const guide = $('apiKeyGuide');
+    const btn = $('btnToggleApiGuide');
+    if (!guide) return;
+    const nextOpen = typeof forceOpen === 'boolean' ? forceOpen : guide.hidden;
+    guide.hidden = !nextOpen;
+    if (btn) btn.setAttribute('aria-expanded', String(nextOpen));
+    if (nextOpen) {
+      try { guide.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) { /* ignore */ }
+    }
+  }
+  function openApiKeyGuide() {
+    // 設定欄の初期化に失敗しても、モーダル表示とガイド展開は必ず行う
+    safeRun('openSettingsModal', () => openSettingsModal());
+    const modal = $('settingsModal');
+    if (modal) modal.hidden = false;
+    toggleApiKeyGuide(true);
+  }
+  try {
+    document.addEventListener('click', (e) => {
+      const t = e.target;
+      if (!t || typeof t.closest !== 'function') return;
+      const el = t.closest('#btnToggleApiGuide, [data-act="toggle-api-guide"], [data-act="open-api-guide"]');
+      if (!el) return;
+      safeRun('apiKeyGuide', () => {
+        if (el.dataset.act === 'open-api-guide') openApiKeyGuide();
+        else toggleApiKeyGuide();
+      });
+    });
+  } catch (err) {
+    console.error('[HOME学級通信] APIキーガイドのイベント登録でエラー:', err);
+  }
 
   function toISO(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
   function fromISO(s) {
@@ -315,64 +374,68 @@
   }
 
   // ---------- DOM refs ----------
-  const els = {
-    saveStatus: $('saveStatus'),
-    docChipNum: $('docChipNum'),
-    docChipDate: $('docChipDate'),
-    stepper: $('stepper'),
-    editorScroll: $('editorScroll'),
-    welcome: $('welcomeBanner'),
-    issueDate: $('issueDate'),
-    issueDateEra: $('issueDateEra'),
-    issueWeekRange: $('issueWeekRange'),
-    fitArticle: $('fitArticle'),
-    fitParents: $('fitParents'),
-    articleCount: $('articleCount'),
-    parentsCount: $('parentsCount'),
-    aiPanel: $('aiPanel'),
-    btnToggleAi: $('btnToggleAi'),
-    aiModeApi: $('aiModeApi'),
-    aiModeManual: $('aiModeManual'),
-    aiStatus: $('aiStatus'),
-    aiPasteBox: $('aiPasteBox'),
-    photoEditor: $('photoEditor'),
-    photoInput: $('photoInput'),
-    scheduleStartDate: $('scheduleStartDate'),
-    weekRangeBox: $('weekRangeBox'),
-    apronChips: $('apronChips'),
-    scheduleEditor: $('scheduleEditor'),
-    btnChecks: $('btnChecks'),
-    btnZoomToggle: $('btnZoomToggle'),
-    previewViewport: $('previewViewport'),
-    sheetWrapper: $('sheetWrapper'),
-    sheet: $('newsletterSheet'),
-    pvLogoText: $('pvLogoText'),
-    pvSchoolName: $('pvSchoolName'),
-    pvClassIssue: $('pvClassIssue'),
-    pvPublisher: $('pvPublisher'),
-    pvIssueDate: $('pvIssueDate'),
-    pvArticleTitle: $('pvArticleTitle'),
-    pvArticleBody: $('pvArticleBody'),
-    ovArticle: $('ovArticle'),
-    pvPhotoBox: $('pvPhotoBox'),
-    pvPhotoTitle: $('pvPhotoTitle'),
-    pvPhotoGrid: $('pvPhotoGrid'),
-    pvParentsBody: $('pvParentsBody'),
-    ovParents: $('ovParents'),
-    pvScheduleBanner: $('pvScheduleBanner'),
-    pvScheduleBody: $('pvScheduleBody'),
-    exportModal: $('exportModal'),
-    exportIssueLabel: $('exportIssueLabel'),
-    checkList: $('checkList'),
-    issueModal: $('issueModal'),
-    nextIssueDesc: $('nextIssueDesc'),
-    historyList: $('historyList'),
-    settingsModal: $('settingsModal'),
-    geminiApiKey: $('geminiApiKey'),
-    toast: $('toast'),
-    toastMsg: $('toastMsg'),
-    toastAction: $('toastAction')
-  };
+  function collectEls() {
+    return {
+      saveStatus: $('saveStatus'),
+      docChipNum: $('docChipNum'),
+      docChipDate: $('docChipDate'),
+      stepper: $('stepper'),
+      editorScroll: $('editorScroll'),
+      welcome: $('welcomeBanner'),
+      issueDate: $('issueDate'),
+      issueDateEra: $('issueDateEra'),
+      issueWeekRange: $('issueWeekRange'),
+      fitArticle: $('fitArticle'),
+      fitParents: $('fitParents'),
+      articleCount: $('articleCount'),
+      parentsCount: $('parentsCount'),
+      aiPanel: $('aiPanel'),
+      btnToggleAi: $('btnToggleAi'),
+      aiModeApi: $('aiModeApi'),
+      aiModeManual: $('aiModeManual'),
+      aiStatus: $('aiStatus'),
+      aiPasteBox: $('aiPasteBox'),
+      photoEditor: $('photoEditor'),
+      photoInput: $('photoInput'),
+      scheduleStartDate: $('scheduleStartDate'),
+      weekRangeBox: $('weekRangeBox'),
+      apronChips: $('apronChips'),
+      scheduleEditor: $('scheduleEditor'),
+      btnChecks: $('btnChecks'),
+      btnZoomToggle: $('btnZoomToggle'),
+      previewViewport: $('previewViewport'),
+      sheetWrapper: $('sheetWrapper'),
+      sheet: $('newsletterSheet'),
+      pvLogoText: $('pvLogoText'),
+      pvSchoolName: $('pvSchoolName'),
+      pvClassIssue: $('pvClassIssue'),
+      pvPublisher: $('pvPublisher'),
+      pvIssueDate: $('pvIssueDate'),
+      pvArticleTitle: $('pvArticleTitle'),
+      pvArticleBody: $('pvArticleBody'),
+      ovArticle: $('ovArticle'),
+      pvPhotoBox: $('pvPhotoBox'),
+      pvPhotoTitle: $('pvPhotoTitle'),
+      pvPhotoGrid: $('pvPhotoGrid'),
+      pvParentsBody: $('pvParentsBody'),
+      ovParents: $('ovParents'),
+      pvScheduleBanner: $('pvScheduleBanner'),
+      pvScheduleBody: $('pvScheduleBody'),
+      exportModal: $('exportModal'),
+      exportIssueLabel: $('exportIssueLabel'),
+      checkList: $('checkList'),
+      issueModal: $('issueModal'),
+      nextIssueDesc: $('nextIssueDesc'),
+      historyList: $('historyList'),
+      settingsModal: $('settingsModal'),
+      cloudNudgeModal: $('cloudNudgeModal'),
+      geminiApiKey: $('geminiApiKey'),
+      toast: $('toast'),
+      toastMsg: $('toastMsg'),
+      toastAction: $('toastAction')
+    };
+  }
+  const els = collectEls();
 
   // ---------- Fit (auto font size) ----------
   const fitResult = { article: { size: FONT.article.base, overflowLines: 0 }, parents: { size: FONT.parents.base, overflowLines: 0 } };
@@ -1027,14 +1090,52 @@ ${ai.parentsMemo.trim() || '（特になし：日頃の感謝と体調管理の�
   }
 
   // ---------- Modals ----------
-  function openModal(m) { m.hidden = false; }
-  function closeModal(m) { m.hidden = true; }
+  function openModal(m) { if (m) m.hidden = false; }
+  function closeModal(m) { if (m) m.hidden = true; }
   function openSettingsModal() {
-    $('newYearSchoolName').value = state.schoolName || '';
-    $('newYearClassName').value = state.className || '';
-    $('newYearPublisherName').value = state.publisherName || '';
-    $('newYearResetSchedule').checked = false;
+    const nySchool = $('newYearSchoolName');
+    const nyClass = $('newYearClassName');
+    const nyPub = $('newYearPublisherName');
+    const nyReset = $('newYearResetSchedule');
+    if (nySchool) nySchool.value = state.schoolName || '';
+    if (nyClass) nyClass.value = state.className || '';
+    if (nyPub) nyPub.value = state.publisherName || '';
+    if (nyReset) nyReset.checked = false;
     openModal(els.settingsModal);
+  }
+
+  // ---------- Cloud login nudge ----------
+  function isCloudNudgeDismissed() {
+    try {
+      return localStorage.getItem(KEYS.cloudNudgeDismissed) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+  function dismissCloudNudge() {
+    try {
+      localStorage.setItem(KEYS.cloudNudgeDismissed, '1');
+    } catch (_) { /* ignore */ }
+    closeModal(els.cloudNudgeModal);
+  }
+  function maybeShowCloudNudge() {
+    if (cloudSession) return;
+    if (isCloudNudgeDismissed()) return;
+    if (!els.cloudNudgeModal || !els.cloudNudgeModal.hidden) return;
+    openModal(els.cloudNudgeModal);
+  }
+  function openCloudLoginFromNudge() {
+    closeModal(els.cloudNudgeModal);
+    openIssueModal();
+    renderCloudSection();
+    requestAnimationFrame(() => {
+      const cloudBox = document.querySelector('#issueModal .cloud-box');
+      if (cloudBox) {
+        try { cloudBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) { /* ignore */ }
+      }
+      const emailInput = $('cloudEmail');
+      if (emailInput) emailInput.focus();
+    });
   }
 
   function openExport() {
@@ -1104,7 +1205,21 @@ ${ai.parentsMemo.trim() || '（特になし：日頃の感謝と体調管理の�
     saveToHistory();
     if (kind === 'print') {
       closeModal(els.exportModal);
-      setTimeout(() => window.print(), 150);
+      // 印刷ダイアログを閉じてからクラウド案内を出す（印刷の邪魔をしない）
+      let printNudgeDone = false;
+      const onAfterPrint = () => {
+        if (printNudgeDone) return;
+        printNudgeDone = true;
+        window.removeEventListener('afterprint', onAfterPrint);
+        setTimeout(() => maybeShowCloudNudge(), 200);
+      };
+      const hasAfterPrint = 'onafterprint' in window;
+      if (hasAfterPrint) window.addEventListener('afterprint', onAfterPrint);
+      setTimeout(() => {
+        window.print();
+        // afterprint 非対応ブラウザ向け：print() から戻った時点で表示
+        if (!hasAfterPrint) onAfterPrint();
+      }, 150);
       return;
     }
     btn.disabled = true;
@@ -1119,6 +1234,7 @@ ${ai.parentsMemo.trim() || '（特になし：日頃の感謝と体調管理の�
         showToast('画像を保存しました。LINEのトークに添付して送れます');
       }
       closeModal(els.exportModal);
+      setTimeout(() => maybeShowCloudNudge(), 300);
     } catch (err) {
       console.error(err);
       showToast(`書き出しに失敗しました：${err.message}`, { error: true });
@@ -1257,302 +1373,331 @@ ${ai.parentsMemo.trim() || '（特になし：日頃の感謝と体調管理の�
 
   // ---------- Events ----------
   function bindEvents() {
-    bindDataInputs();
+    safeRun('bindDataInputs', bindDataInputs);
 
     // actions via data-act
-    document.addEventListener('click', (e) => {
-      const el = e.target.closest('[data-act]');
-      if (!el) return;
-      const act = el.dataset.act;
-      if (act === 'open-export') openExport();
-      else if (act === 'open-settings') openSettingsModal();
-      else if (act === 'open-api-guide') {
-        openSettingsModal();
-        const guide = $('apiKeyGuide');
-        const btn = $('btnToggleApiGuide');
-        if (guide) {
-          guide.hidden = false;
-          if (btn) btn.setAttribute('aria-expanded', 'true');
-          guide.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // ※ APIキーガイド（toggle-api-guide / open-api-guide）はスクリプト先頭で独立登録済み。
+    //   ここでも処理すると二重に開閉されるため扱わない。
+    safeRun('bindActions', () => {
+      document.addEventListener('click', (e) => {
+        const el = e.target.closest('[data-act]');
+        if (!el) return;
+        const act = el.dataset.act;
+        if (act === 'open-export') openExport();
+        else if (act === 'open-settings') openSettingsModal();
+        else if (act === 'load-sample') loadSample();
+        else if (act === 'dismiss-welcome') dismissWelcome();
+        else if (act === 'issue-inc' || act === 'issue-dec') {
+          state.issueNumber = Math.max(1, state.issueNumber + (act === 'issue-inc' ? 1 : -1));
+          const numInput = document.querySelector('[data-bind="issueNumber"]');
+          if (numInput) numInput.value = state.issueNumber;
+          commit();
+        } else if (act === 'date-this-fri') setIssueDate(toISO(fridayOfWeek(new Date())));
+        else if (act === 'date-next-fri') setIssueDate(toISO(addDays(fridayOfWeek(new Date()), 7)));
+      });
+    });
+
+    // stepper & preview click-to-edit
+    safeRun('bindNavigation', () => {
+      onEl(els.stepper, 'click', (e) => {
+        const b = e.target.closest('.step');
+        if (b) goToSection(b.dataset.target);
+      });
+      onEl(els.editorScroll, 'scroll', () => requestAnimationFrame(updateActiveStep));
+      onEl(els.sheet, 'click', (e) => {
+        const area = e.target.closest('[data-edit]');
+        if (!area) return;
+        const target = area.dataset.edit;
+        if (target === 'sec-photos' && state.photos.length === 0) {
+          if (els.photoInput) els.photoInput.click();
+          return;
         }
-      }
-      else if (act === 'load-sample') loadSample();
-      else if (act === 'dismiss-welcome') dismissWelcome();
-      else if (act === 'issue-inc' || act === 'issue-dec') {
-        state.issueNumber = Math.max(1, state.issueNumber + (act === 'issue-inc' ? 1 : -1));
-        document.querySelector('[data-bind="issueNumber"]').value = state.issueNumber;
+        const focusMap = { 'sec-article': e.target.closest('#pvArticleTitle') ? 'articleTitle' : 'articleBody', 'sec-parents': 'parentsNote' };
+        goToSection(target, focusMap[target]);
+      });
+    });
+
+    // photo drops & paste
+    safeRun('bindPhotos', () => {
+      onEl(els.pvPhotoBox, 'dragover', (e) => { e.preventDefault(); els.pvPhotoBox.classList.add('dragover'); });
+      onEl(els.pvPhotoBox, 'dragleave', () => els.pvPhotoBox.classList.remove('dragover'));
+      onEl(els.pvPhotoBox, 'drop', (e) => { e.preventDefault(); els.pvPhotoBox.classList.remove('dragover'); addPhotos(e.dataTransfer.files); });
+      onEl(els.photoInput, 'change', () => { addPhotos(els.photoInput.files); els.photoInput.value = ''; });
+      document.addEventListener('paste', (e) => {
+        if (e.target === els.aiPasteBox) return;
+        const files = Array.from(e.clipboardData?.files || []).filter((f) => f.type.startsWith('image/'));
+        if (files.length) {
+          e.preventDefault();
+          addPhotos(files);
+        }
+      });
+    });
+
+    // dates & schedule base
+    safeRun('bindDatesAndSchedule', () => {
+      onEl(els.issueDate, 'change', () => { if (els.issueDate.value) setIssueDate(els.issueDate.value); });
+      onEl(els.scheduleStartDate, 'change', () => {
+        const d = fromISO(els.scheduleStartDate.value);
+        if (!d) return;
+        if (d.getDay() !== 1) {
+          const mon = addDays(d, -((d.getDay() + 6) % 7));
+          showToast(`週の始まりを月曜（${shortDate(mon)}）に合わせました`);
+          setScheduleStart(toISO(mon));
+        } else {
+          setScheduleStart(els.scheduleStartDate.value);
+        }
+      });
+      onEl('btnSaveBase', 'click', () => {
+        const base = state.schedule.map((r) => ({ periods: r.periods.slice(), lunch: r.lunch, clean: r.clean, club: r.club, endTime: r.endTime, note: r.note }));
+        localStorage.setItem(KEYS.base, JSON.stringify(base));
+        showToast('「いつもの時間割」に登録しました。次の号から自動で使われます');
+      });
+      onEl('btnResetBase', 'click', () => {
+        const before = clone(state.schedule);
+        state.schedule = getBase().map(rowFromBase);
+        applyAutoHolidays();
+        renderScheduleEditor();
         commit();
-      } else if (act === 'date-this-fri') setIssueDate(toISO(fridayOfWeek(new Date())));
-      else if (act === 'date-next-fri') setIssueDate(toISO(addDays(fridayOfWeek(new Date()), 7)));
-    });
-
-    // stepper
-    els.stepper.addEventListener('click', (e) => {
-      const b = e.target.closest('.step');
-      if (b) goToSection(b.dataset.target);
-    });
-    els.editorScroll.addEventListener('scroll', () => requestAnimationFrame(updateActiveStep));
-
-    // preview click-to-edit
-    els.sheet.addEventListener('click', (e) => {
-      const area = e.target.closest('[data-edit]');
-      if (!area) return;
-      const target = area.dataset.edit;
-      if (target === 'sec-photos' && state.photos.length === 0) {
-        els.photoInput.click();
-        return;
-      }
-      const focusMap = { 'sec-article': e.target.closest('#pvArticleTitle') ? 'articleTitle' : 'articleBody', 'sec-parents': 'parentsNote' };
-      goToSection(target, focusMap[target]);
-    });
-
-    // photo drops on preview
-    els.pvPhotoBox.addEventListener('dragover', (e) => { e.preventDefault(); els.pvPhotoBox.classList.add('dragover'); });
-    els.pvPhotoBox.addEventListener('dragleave', () => els.pvPhotoBox.classList.remove('dragover'));
-    els.pvPhotoBox.addEventListener('drop', (e) => { e.preventDefault(); els.pvPhotoBox.classList.remove('dragover'); addPhotos(e.dataTransfer.files); });
-    els.photoInput.addEventListener('change', () => { addPhotos(els.photoInput.files); els.photoInput.value = ''; });
-
-    // paste image anywhere
-    document.addEventListener('paste', (e) => {
-      if (e.target === els.aiPasteBox) return;
-      const files = Array.from(e.clipboardData?.files || []).filter((f) => f.type.startsWith('image/'));
-      if (files.length) {
-        e.preventDefault();
-        addPhotos(files);
-      }
-    });
-
-    // dates
-    els.issueDate.addEventListener('change', () => { if (els.issueDate.value) setIssueDate(els.issueDate.value); });
-    els.scheduleStartDate.addEventListener('change', () => {
-      const d = fromISO(els.scheduleStartDate.value);
-      if (!d) return;
-      if (d.getDay() !== 1) {
-        const mon = addDays(d, -((d.getDay() + 6) % 7));
-        showToast(`週の始まりを月曜（${shortDate(mon)}）に合わせました`);
-        setScheduleStart(toISO(mon));
-      } else {
-        setScheduleStart(els.scheduleStartDate.value);
-      }
-    });
-
-    // schedule base
-    $('btnSaveBase').addEventListener('click', () => {
-      const base = state.schedule.map((r) => ({ periods: r.periods.slice(), lunch: r.lunch, clean: r.clean, club: r.club, endTime: r.endTime, note: r.note }));
-      localStorage.setItem(KEYS.base, JSON.stringify(base));
-      showToast('「いつもの時間割」に登録しました。次の号から自動で使われます');
-    });
-    $('btnResetBase').addEventListener('click', () => {
-      const before = clone(state.schedule);
-      state.schedule = getBase().map(rowFromBase);
-      applyAutoHolidays();
-      renderScheduleEditor();
-      commit();
-      showToast('いつもの時間割に戻しました', {
-        actionLabel: '元に戻す',
-        onAction: () => { state.schedule = before; renderScheduleEditor(); commit(); }
+        showToast('いつもの時間割に戻しました', {
+          actionLabel: '元に戻す',
+          onAction: () => { state.schedule = before; renderScheduleEditor(); commit(); }
+        });
       });
     });
 
     // parent templates
-    document.querySelectorAll('[data-tpl]').forEach((b) => {
-      b.addEventListener('click', () => {
-        const ta = $('parentsNote');
-        const tpl = PARENT_TEMPLATES[b.dataset.tpl];
-        const cur = ta.value;
-        const pos = document.activeElement === ta ? ta.selectionStart : cur.length;
-        const before = cur.slice(0, pos);
-        const after = cur.slice(pos);
-        const sep = before && !before.endsWith('\n') ? '\n' : '';
-        ta.value = `${before}${sep}${tpl}${after}`;
-        state.parentsNote = ta.value;
-        commit();
-        ta.focus();
-        const caret = (before + sep + tpl).length;
-        ta.setSelectionRange(caret, caret);
+    safeRun('bindParentTemplates', () => {
+      document.querySelectorAll('[data-tpl]').forEach((b) => {
+        b.addEventListener('click', () => {
+          const ta = $('parentsNote');
+          if (!ta) return;
+          const tpl = PARENT_TEMPLATES[b.dataset.tpl];
+          const cur = ta.value;
+          const pos = document.activeElement === ta ? ta.selectionStart : cur.length;
+          const before = cur.slice(0, pos);
+          const after = cur.slice(pos);
+          const sep = before && !before.endsWith('\n') ? '\n' : '';
+          ta.value = `${before}${sep}${tpl}${after}`;
+          state.parentsNote = ta.value;
+          commit();
+          ta.focus();
+          const caret = (before + sep + tpl).length;
+          ta.setSelectionRange(caret, caret);
+        });
       });
     });
 
     // AI
-    els.btnToggleAi.addEventListener('click', () => {
-      const open = els.aiPanel.hidden;
-      els.aiPanel.hidden = !open;
-      els.btnToggleAi.setAttribute('aria-expanded', String(open));
-      els.btnToggleAi.textContent = open ? '✕ AI作成パネルを閉じる' : '✨ 箇条書きメモからAIで文章を作る';
-      if (open) updateAiMode();
-    });
-    $('btnGenerateAi').addEventListener('click', async (e) => {
-      const key = getApiKey();
-      if (!key) { updateAiMode(); return; }
-      if (!state.ai.articleMemo.trim() && !confirm('記事のメモが空です。おまかせで作成しますか？')) return;
-      const btn = e.currentTarget;
-      btn.disabled = true;
-      setAiStatus('✨ 作成中です…（10秒ほどかかります）', 'loading');
-      try {
-        const text = await callGemini(key, buildPrompt(false));
-        applyAi(parseAi(text));
-        setAiStatus('✓ 作成してお便りに入れました。内容を確認して整えてください。', 'success');
-      } catch (err) {
-        setAiStatus(`うまく作成できませんでした：${err.message}`, 'error');
-      } finally {
-        btn.disabled = false;
-      }
-    });
-    $('btnCopyPrompt').addEventListener('click', async () => {
-      const text = buildPrompt(true);
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch (_) {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        ta.remove();
-      }
-      setAiStatus('📋 コピーしました。AIに貼り付けて送信してください。', 'success');
-    });
-    els.aiPasteBox.addEventListener('paste', () => {
-      setTimeout(() => {
-        const parsed = parseAi(els.aiPasteBox.value);
-        if (parsed && (parsed.title || parsed.parentsNote || parsed.article)) {
-          applyAi(parsed);
-          els.aiPasteBox.value = '';
-          setAiStatus('✓ お便りに入れました。内容を確認して整えてください。', 'success');
+    safeRun('bindAi', () => {
+      onEl(els.btnToggleAi, 'click', () => {
+        const open = els.aiPanel.hidden;
+        els.aiPanel.hidden = !open;
+        els.btnToggleAi.setAttribute('aria-expanded', String(open));
+        els.btnToggleAi.textContent = open ? '✕ AI作成パネルを閉じる' : '✨ 箇条書きメモからAIで文章を作る';
+        if (open) updateAiMode();
+      });
+      onEl('btnGenerateAi', 'click', async (e) => {
+        const key = getApiKey();
+        if (!key) { updateAiMode(); return; }
+        if (!state.ai.articleMemo.trim() && !confirm('記事のメモが空です。おまかせで作成しますか？')) return;
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        setAiStatus('✨ 作成中です…（10秒ほどかかります）', 'loading');
+        try {
+          const text = await callGemini(key, buildPrompt(false));
+          applyAi(parseAi(text));
+          setAiStatus('✓ 作成してお便りに入れました。内容を確認して整えてください。', 'success');
+        } catch (err) {
+          setAiStatus(`うまく作成できませんでした：${err.message}`, 'error');
+        } finally {
+          btn.disabled = false;
         }
-      }, 30);
-    });
-
-    // header buttons
-    $('btnIssueMenu').addEventListener('click', openIssueModal);
-    $('btnSettings').addEventListener('click', openSettingsModal);
-    els.btnChecks.addEventListener('click', openExport);
-    $('btnNextIssue').addEventListener('click', createNextIssue);
-    $('btnSaveHistory').addEventListener('click', () => { saveToHistory(); renderHistory(); showToast(`第${state.issueNumber}号を保存しました`); });
-
-    // export
-    document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => doExport(b.dataset.export, b)));
-
-    // modals close
-    document.querySelectorAll('.modal').forEach((m) => {
-      m.addEventListener('click', (e) => {
-        if (e.target === m || e.target.closest('[data-close]')) closeModal(m);
+      });
+      onEl('btnCopyPrompt', 'click', async () => {
+        const text = buildPrompt(true);
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch (_) {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+        }
+        setAiStatus('📋 コピーしました。AIに貼り付けて送信してください。', 'success');
+      });
+      onEl(els.aiPasteBox, 'paste', () => {
+        setTimeout(() => {
+          const parsed = parseAi(els.aiPasteBox.value);
+          if (parsed && (parsed.title || parsed.parentsNote || parsed.article)) {
+            applyAi(parsed);
+            els.aiPasteBox.value = '';
+            setAiStatus('✓ お便りに入れました。内容を確認して整えてください。', 'success');
+          }
+        }, 30);
       });
     });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') document.querySelectorAll('.modal').forEach((m) => { if (!m.hidden) closeModal(m); });
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        saveNow();
+
+    // header buttons & history
+    safeRun('bindHeaderAndHistory', () => {
+      onEl('btnIssueMenu', 'click', openIssueModal);
+      onEl('btnSettings', 'click', openSettingsModal);
+      onEl(els.btnChecks, 'click', openExport);
+      onEl('btnNextIssue', 'click', createNextIssue);
+      onEl('btnSaveHistory', 'click', () => {
         saveToHistory();
+        renderHistory();
         showToast(`第${state.issueNumber}号を保存しました`);
-      }
+        maybeShowCloudNudge();
+      });
+    });
+
+    // export
+    safeRun('bindExport', () => {
+      document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => doExport(b.dataset.export, b)));
+    });
+
+    // modals close & keyboard shortcuts
+    safeRun('bindModalsAndKeys', () => {
+      document.querySelectorAll('.modal').forEach((m) => {
+        m.addEventListener('click', (e) => {
+          if (e.target === m || e.target.closest('[data-close]')) closeModal(m);
+        });
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          if (els.cloudNudgeModal && !els.cloudNudgeModal.hidden) {
+            closeModal(els.cloudNudgeModal);
+          } else {
+            document.querySelectorAll('.modal').forEach((m) => { if (!m.hidden) closeModal(m); });
+          }
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          saveNow();
+          saveToHistory();
+          showToast(`第${state.issueNumber}号を保存しました`);
+          maybeShowCloudNudge();
+        }
+      });
+    });
+
+    // cloud nudge modal buttons
+    safeRun('bindCloudNudge', () => {
+      onEl('btnCloudNudgeLogin', 'click', openCloudLoginFromNudge);
+      onEl('btnCloudNudgeDismiss', 'click', dismissCloudNudge);
     });
 
     // settings: API key
-    els.geminiApiKey.value = getApiKey();
-    els.geminiApiKey.addEventListener('input', () => {
-      localStorage.setItem(KEYS.api, els.geminiApiKey.value.trim());
-      updateAiMode();
-    });
-    $('btnToggleKey').addEventListener('click', (e) => {
-      const show = els.geminiApiKey.type === 'password';
-      els.geminiApiKey.type = show ? 'text' : 'password';
-      e.currentTarget.textContent = show ? '隠す' : '表示';
-    });
-    $('btnToggleApiGuide').addEventListener('click', (e) => {
-      const guide = $('apiKeyGuide');
-      const nextHidden = !guide.hidden;
-      guide.hidden = nextHidden;
-      e.currentTarget.setAttribute('aria-expanded', String(!nextHidden));
+    safeRun('bindSettingsApiKey', () => {
+      if (els.geminiApiKey) {
+        els.geminiApiKey.value = getApiKey();
+        els.geminiApiKey.addEventListener('input', () => {
+          localStorage.setItem(KEYS.api, els.geminiApiKey.value.trim());
+          updateAiMode();
+        });
+      }
+      onEl('btnToggleKey', 'click', (e) => {
+        if (!els.geminiApiKey) return;
+        const show = els.geminiApiKey.type === 'password';
+        els.geminiApiKey.type = show ? 'text' : 'password';
+        e.currentTarget.textContent = show ? '隠す' : '表示';
+      });
     });
 
     // settings: new school year setup
-    $('btnNewYearSetup').addEventListener('click', () => {
-      const newSchool = $('newYearSchoolName').value.trim() || state.schoolName;
-      const newClass = $('newYearClassName').value.trim() || state.className;
-      const newPublisher = $('newYearPublisherName').value.trim() || state.publisherName;
-      const resetSchedule = $('newYearResetSchedule').checked;
+    safeRun('bindNewYearSetup', () => {
+      onEl('btnNewYearSetup', 'click', () => {
+        const newSchool = $('newYearSchoolName').value.trim() || state.schoolName;
+        const newClass = $('newYearClassName').value.trim() || state.className;
+        const newPublisher = $('newYearPublisherName').value.trim() || state.publisherName;
+        const resetSchedule = $('newYearResetSchedule').checked;
 
-      const msg = [
-        '新年度・新クラスで第1号を開始します。よろしいですか？',
-        '',
-        '【変わること】',
-        `・学校名：${newSchool}`,
-        `・クラス・通信名：${newClass}`,
-        `・発行者：${newPublisher}`,
-        '・現在の号を「第1号」にリセット（記事・保護者欄・写真をクリア）',
-        resetSchedule ? '・基本の時間割（デフォルト予定）を初期状態にリセット' : '',
-        '',
-        '【残ること】',
-        '・過去の号の履歴（このPC内とクラウド）',
-        '・APIキー・クラウド設定',
-        resetSchedule ? '' : '・基本の時間割（デフォルト予定）'
-      ].filter(Boolean).join('\n');
+        const msg = [
+          '新年度・新クラスで第1号を開始します。よろしいですか？',
+          '',
+          '【変わること】',
+          `・学校名：${newSchool}`,
+          `・クラス・通信名：${newClass}`,
+          `・発行者：${newPublisher}`,
+          '・現在の号を「第1号」にリセット（記事・保護者欄・写真をクリア）',
+          resetSchedule ? '・基本の時間割（デフォルト予定）を初期状態にリセット' : '',
+          '',
+          '【残ること】',
+          '・過去の号の履歴（このPC内とクラウド）',
+          '・APIキー・クラウド設定',
+          resetSchedule ? '' : '・基本の時間割（デフォルト予定）'
+        ].filter(Boolean).join('\n');
 
-      if (!confirm(msg)) return;
+        if (!confirm(msg)) return;
 
-      saveToHistory();
-      if (resetSchedule) localStorage.removeItem(KEYS.base);
+        saveToHistory();
+        if (resetSchedule) localStorage.removeItem(KEYS.base);
 
-      const friday = fridayOfWeek(new Date());
-      state = {
-        ...state,
-        schoolName: newSchool,
-        className: newClass,
-        publisherName: newPublisher,
-        issueNumber: 1,
-        issueDate: toISO(friday),
-        articleTitle: '',
-        articleBody: '',
-        parentsNote: '',
-        photos: [],
-        schedule: getBase().map(rowFromBase),
-        scheduleStartDate: toISO(nextMonday(friday)),
-        ai: { ...state.ai, articleMemo: '', parentsMemo: '' }
-      };
-      applyAutoHolidays();
-      syncInputs();
-      commit();
-      closeModal(els.settingsModal);
-      showToast('新年度・新クラスで第1号を開始しました');
+        const friday = fridayOfWeek(new Date());
+        state = {
+          ...state,
+          schoolName: newSchool,
+          className: newClass,
+          publisherName: newPublisher,
+          issueNumber: 1,
+          issueDate: toISO(friday),
+          articleTitle: '',
+          articleBody: '',
+          parentsNote: '',
+          photos: [],
+          schedule: getBase().map(rowFromBase),
+          scheduleStartDate: toISO(nextMonday(friday)),
+          ai: { ...state.ai, articleMemo: '', parentsMemo: '' }
+        };
+        applyAutoHolidays();
+        syncInputs();
+        commit();
+        closeModal(els.settingsModal);
+        showToast('新年度・新クラスで第1号を開始しました');
+      });
     });
 
     // settings: backup
-    $('btnExportJson').addEventListener('click', () => {
-      const payload = { version: 2, exportedAt: new Date().toISOString(), currentState: state, defaultSchedule: getBase(), history: loadHistory() };
-      download(new Blob([JSON.stringify(payload)], { type: 'application/json' }), `学級通信HOME_バックアップ_${toISO(new Date())}.json`);
-      showToast('バックアップを保存しました');
-    });
-    $('importJsonInput').addEventListener('change', (e) => {
-      const f = e.target.files[0];
-      if (!f) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const p = JSON.parse(reader.result);
-          if (p.defaultSchedule) localStorage.setItem(KEYS.base, JSON.stringify(p.defaultSchedule));
-          if (Array.isArray(p.history)) saveHistoryList(p.history);
-          if (p.currentState) state = migrate(p.currentState);
-          syncInputs();
-          commit();
-          showToast('バックアップから復元しました');
-        } catch (_) {
-          showToast('バックアップファイルを読み込めませんでした', { error: true });
-        }
-      };
-      reader.readAsText(f);
-      e.target.value = '';
-    });
-    $('btnResetAll').addEventListener('click', () => {
-      if (!confirm('すべてのデータ（保存した号・いつもの時間割・APIキーを含む）を削除して初期状態に戻しますか？\nこの操作は元に戻せません。')) return;
-      Object.values(KEYS).forEach((k) => localStorage.removeItem(k));
-      location.reload();
+    safeRun('bindBackup', () => {
+      onEl('btnExportJson', 'click', () => {
+        const payload = { version: 2, exportedAt: new Date().toISOString(), currentState: state, defaultSchedule: getBase(), history: loadHistory() };
+        download(new Blob([JSON.stringify(payload)], { type: 'application/json' }), `学級通信HOME_バックアップ_${toISO(new Date())}.json`);
+        showToast('バックアップを保存しました');
+      });
+      onEl('importJsonInput', 'change', (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const p = JSON.parse(reader.result);
+            if (p.defaultSchedule) localStorage.setItem(KEYS.base, JSON.stringify(p.defaultSchedule));
+            if (Array.isArray(p.history)) saveHistoryList(p.history);
+            if (p.currentState) state = migrate(p.currentState);
+            syncInputs();
+            commit();
+            showToast('バックアップから復元しました');
+          } catch (_) {
+            showToast('バックアップファイルを読み込めませんでした', { error: true });
+          }
+        };
+        reader.readAsText(f);
+        e.target.value = '';
+      });
+      onEl('btnResetAll', 'click', () => {
+        if (!confirm('すべてのデータ（保存した号・いつもの時間割・APIキーを含む）を削除して初期状態に戻しますか？\nこの操作は元に戻せません。')) return;
+        Object.values(KEYS).forEach((k) => localStorage.removeItem(k));
+        location.reload();
+      });
     });
 
     // zoom
-    els.btnZoomToggle.addEventListener('click', () => { zoomFull = !zoomFull; updateZoom(); });
-    window.addEventListener('resize', updateZoom);
+    safeRun('bindZoom', () => {
+      onEl(els.btnZoomToggle, 'click', () => { zoomFull = !zoomFull; updateZoom(); });
+      window.addEventListener('resize', updateZoom);
+    });
   }
 
   // ---------- Init ----------
@@ -1781,19 +1926,32 @@ ${ai.parentsMemo.trim() || '（特になし：日頃の感謝と体調管理の�
   }
 
   function init() {
-    applyAutoHolidays();
-    syncInputs();
-    bindEvents();
-    bindCloudEvents();
-    renderCloudSection();
-    render();
-    updateZoom();
-    updateActiveStep();
-    els.welcome.hidden = !isFirstRun && !!localStorage.getItem(KEYS.welcome) ? true : !!localStorage.getItem(KEYS.welcome);
-    saveNow();
+    Object.assign(els, collectEls());
+    safeRun('checkAppVersion', checkAppVersion);
+    safeRun('applyAutoHolidays', applyAutoHolidays);
+    safeRun('syncInputs', syncInputs);
+    safeRun('bindEvents', bindEvents);
+    safeRun('bindCloudEvents', bindCloudEvents);
+    safeRun('renderCloudSection', renderCloudSection);
+    safeRun('render', render);
+    safeRun('updateZoom', updateZoom);
+    safeRun('updateActiveStep', updateActiveStep);
+    safeRun('initWelcome', () => {
+      if (els.welcome) {
+        els.welcome.hidden = !isFirstRun && !!localStorage.getItem(KEYS.welcome) ? true : !!localStorage.getItem(KEYS.welcome);
+      }
+    });
+    safeRun('saveNow', saveNow);
     // フォント読み込み後に再計測（はみ出し判定のずれ防止）
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => render());
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => safeRun('renderAfterFonts', render));
+    }
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  // defer 読み込み時は DOM 解析済み（interactive）なので即 init。万一 loading 中なら DOMContentLoaded を待つ
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    init();
+  }
 })();

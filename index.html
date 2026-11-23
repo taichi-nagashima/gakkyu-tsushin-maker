@@ -4,7 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HOME 学級通信メーカー</title>
-  <link rel="stylesheet" href="styles.css" />
+  <!-- =========================================================
+       キャッシュ対策バージョン（CSS / JS を更新したら必ず新しい日付に変更）
+       ※ 下の meta の content の値を、このフォルダの index.html と app.js で一括置換すると
+         meta・4つの ?v=・app.js の APP_VERSION をまとめて更新できます
+       ※ 同じ日に複数回更新するときは「日付＋連番」（例: 2026112302）にしてください
+       ========================================================= -->
+  <meta name="asset-version" content="20261123" />
+  <link rel="stylesheet" href="styles.css?v=20261123" />
+  <script defer src="docx-builder.js?v=20261123"></script>
+  <script defer src="png-exporter.js?v=20261123"></script>
+  <script defer src="app.js?v=20261123"></script>
 </head>
 <body>
   <!-- ===== トップバー ===== -->
@@ -461,7 +471,7 @@
         <div class="key-row">
           <input type="password" id="geminiApiKey" placeholder="APIキー（AIza…）" autocomplete="off" />
           <button type="button" class="btn btn-ghost btn-sm" id="btnToggleKey">表示</button>
-          <button type="button" class="btn btn-outline btn-sm" id="btnToggleApiGuide" aria-expanded="false">📖 APIキーの取り方を見る</button>
+          <button type="button" class="btn btn-outline btn-sm" id="btnToggleApiGuide" data-act="toggle-api-guide" aria-expanded="false">📖 APIキーの取り方を見る</button>
         </div>
         <div id="apiKeyGuide" class="api-guide-box" hidden>
           <p class="api-guide-lead">
@@ -504,14 +514,35 @@
     </div>
   </div>
 
+  <!-- ===== クラウド保存のご案内（ナッジ） ===== -->
+  <div class="modal modal-nudge no-print" id="cloudNudgeModal" hidden>
+    <div class="modal-card modal-compact" role="dialog" aria-modal="true" aria-labelledby="cloudNudgeTitle">
+      <div class="modal-head">
+        <h2 id="cloudNudgeTitle">☁️ クラウド保存がオフです</h2>
+        <button type="button" class="modal-x" data-close aria-label="閉じる">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="nudge-lead">
+          クラウド保存がオフです。ログインすると、別のPCでも過去の号を読み込めて、PCが壊れても履歴が残ります。
+        </p>
+        <p class="muted small nudge-note">
+          ※ ログインしなくても、このPCのブラウザには保存されています（ログインは任意です）。
+        </p>
+        <div class="nudge-actions">
+          <button type="button" class="btn btn-primary" id="btnCloudNudgeLogin">ログインする</button>
+          <button type="button" class="btn btn-ghost" data-close>閉じる</button>
+        </div>
+        <div class="nudge-dismiss-row">
+          <button type="button" class="link" id="btnCloudNudgeDismiss">今後表示しない</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== トースト ===== -->
   <div class="toast" id="toast" hidden role="status">
     <span id="toastMsg"></span>
     <button type="button" class="toast-action" id="toastAction" hidden></button>
   </div>
-
-  <script src="docx-builder.js"></script>
-  <script src="png-exporter.js"></script>
-  <script src="app.js"></script>
 </body>
 </html>
