@@ -1234,3 +1234,19 @@ html, body {
     min-height: 600px;
   }
 }
+
+/* ---------- Cloud sync ---------- */
+.cloud-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: var(--surface);
+}
+.cloud-box h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.cloud-box .api-key-row input {
+  flex: 1 1 140px;
+}

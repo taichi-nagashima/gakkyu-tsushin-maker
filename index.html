@@ -427,6 +427,27 @@
         <button type="button" class="modal-close" id="btnCloseHistory">×</button>
       </div>
       <div class="modal-body">
+        <div class="cloud-box">
+          <h3>☁️ クラウド保存（別のPCでも読み込めます）</h3>
+          <div id="cloudLoggedOut">
+            <div class="api-key-row">
+              <input type="email" id="cloudEmail" placeholder="メールアドレス" autocomplete="username" />
+              <input type="password" id="cloudPassword" placeholder="パスワード" autocomplete="current-password" />
+              <button type="button" class="btn btn-sm btn-primary" id="btnCloudLogin">ログイン</button>
+            </div>
+            <p class="help-text">ログインすると「現在の号を履歴に保存」でクラウドにも自動保存されます。家計簿アプリと同じアカウント（メールアドレスとパスワード）が使えます。</p>
+          </div>
+          <div id="cloudLoggedIn" class="hidden">
+            <p class="help-text"><strong id="cloudUserEmail"></strong> でログイン中です。「現在の号を履歴に保存」を押すと、このPCとクラウドの両方に保存されます。</p>
+            <div class="history-actions">
+              <button type="button" class="btn btn-sm btn-outline" id="btnCloudRefresh">☁️ クラウド履歴を再読み込み</button>
+              <button type="button" class="btn btn-sm btn-ghost" id="btnCloudLogout">ログアウト</button>
+            </div>
+            <h3 class="mt-16">☁️ クラウドの保存済みの号</h3>
+            <div id="cloudHistoryList" class="history-list"></div>
+          </div>
+          <p class="help-text" id="cloudStatus"></p>
+        </div>
         <div class="history-actions">
           <button type="button" class="btn btn-primary" id="btnSaveCurrentToHistory">💾 現在の号を履歴に保存</button>
           <button type="button" class="btn btn-outline" id="btnExportJson">⬇️ バックアップ書き出し (JSON)</button>

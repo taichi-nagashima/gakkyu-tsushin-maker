@@ -9,6 +9,9 @@
   const STORAGE_KEY_DEFAULT_SCHEDULE = 'home_newsletter_default_schedule_v1';
   const STORAGE_KEY_HISTORY = 'home_newsletter_history_v1';
   const STORAGE_KEY_API = 'home_newsletter_gemini_api_key_v1';
+  const STORAGE_KEY_CLOUD = 'home_newsletter_cloud_session_v1';
+  const SUPABASE_URL = 'https://ilwspkhaystykdpwiijq.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_3I2MqHL-VQkVgsNeltZ-WQ_AigHp1KV';
 
   const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
   const FLAG_CYCLE = ['〇', '×', '△', '－'];
@@ -1199,6 +1202,7 @@ ${parentsMemo || '（指定なし：日頃の感謝と体調管理・持ち物�
     if (existingIdx >= 0) list[existingIdx] = entry;
     else list.unshift(entry);
     saveHistory(list.slice(0, 30));
+    cloudSaveEntry(entry);
   }
 
   function buildExportPayload() {
@@ -1224,11 +1228,251 @@ ${parentsMemo || '（指定なし：日頃の感謝と体調管理・持ち物�
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   }
 
+
+  // ---------- Cloud Sync (Supabase) ----------
+  function cloudLoadSession() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY_CLOUD) || 'null');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function cloudStoreSession(session) {
+    if (session) localStorage.setItem(STORAGE_KEY_CLOUD, JSON.stringify(session));
+    else localStorage.removeItem(STORAGE_KEY_CLOUD);
+  }
+
+  let cloudSession = cloudLoadSession();
+
+  function setCloudStatus(msg) {
+    const el = document.getElementById('cloudStatus');
+    if (el) el.textContent = msg || '';
+  }
+
+  async function cloudAuthRequest(path, body) {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/${path}`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error_description || data.msg || '認証に失敗しました');
+    return data;
+  }
+
+  function cloudSetSession(data, email) {
+    cloudSession = {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at: Date.now() + (data.expires_in || 3600) * 1000,
+      email: email || (data.user && data.user.email) || ''
+    };
+    cloudStoreSession(cloudSession);
+  }
+
+  async function cloudEnsureToken() {
+    if (!cloudSession) return null;
+    if (cloudSession.expires_at && Date.now() < cloudSession.expires_at - 60000) {
+      return cloudSession.access_token;
+    }
+    try {
+      const data = await cloudAuthRequest('token?grant_type=refresh_token', {
+        refresh_token: cloudSession.refresh_token
+      });
+      cloudSetSession(data, cloudSession.email);
+      return cloudSession.access_token;
+    } catch (_) {
+      cloudSession = null;
+      cloudStoreSession(null);
+      renderCloudSection();
+      return null;
+    }
+  }
+
+  async function cloudRest(method, path, body, extraHeaders) {
+    const token = await cloudEnsureToken();
+    if (!token) throw new Error('not logged in');
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      method,
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...(extraHeaders || {})
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`cloud request failed: ${res.status} ${text.slice(0, 200)}`);
+    }
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  }
+
+  async function cloudSaveEntry(entry) {
+    if (!cloudSession) return;
+    try {
+      await cloudRest(
+        'POST',
+        'newsletter_issues?on_conflict=user_id,issue_number,issue_date',
+        {
+          issue_number: entry.issueNumber,
+          issue_date: entry.issueDate || null,
+          article_title: entry.articleTitle || '',
+          saved_at: entry.savedAt || '',
+          data: entry.data
+        },
+        { Prefer: 'resolution=merge-duplicates,return=minimal' }
+      );
+      setCloudStatus('☁️ クラウドにも保存しました');
+      renderCloudHistory();
+    } catch (err) {
+      console.warn('cloud save failed:', err);
+      setCloudStatus('⚠️ クラウド保存に失敗しました（このPCには保存されています）');
+    }
+  }
+
+  function renderCloudSection() {
+    const out = document.getElementById('cloudLoggedOut');
+    const inn = document.getElementById('cloudLoggedIn');
+    if (!out || !inn) return;
+    if (cloudSession) {
+      out.classList.add('hidden');
+      inn.classList.remove('hidden');
+      const emailEl = document.getElementById('cloudUserEmail');
+      if (emailEl) emailEl.textContent = cloudSession.email || '';
+      renderCloudHistory();
+    } else {
+      out.classList.remove('hidden');
+      inn.classList.add('hidden');
+    }
+  }
+
+  async function renderCloudHistory() {
+    const listEl = document.getElementById('cloudHistoryList');
+    if (!listEl || !cloudSession) return;
+    listEl.innerHTML = '<p class="help-text">読み込み中…</p>';
+    let rows;
+    try {
+      rows = await cloudRest(
+        'GET',
+        'newsletter_issues?select=id,issue_number,issue_date,article_title,saved_at,data&order=created_at.desc&limit=30'
+      );
+    } catch (err) {
+      console.warn('cloud history fetch failed:', err);
+      listEl.innerHTML = '<p class="help-text">クラウド履歴を取得できませんでした。</p>';
+      return;
+    }
+    listEl.innerHTML = '';
+    if (!rows || rows.length === 0) {
+      listEl.innerHTML = '<p class="help-text">クラウドに保存された号はまだありません。</p>';
+      return;
+    }
+    rows.forEach((row) => {
+      const item = {
+        issueNumber: row.issue_number,
+        issueDate: row.issue_date,
+        articleTitle: row.article_title,
+        savedAt: row.saved_at,
+        data: row.data
+      };
+      const rowEl = document.createElement('div');
+      rowEl.className = 'history-row';
+
+      const info = document.createElement('div');
+      info.className = 'history-row-info';
+      info.innerHTML = `<strong>第${item.issueNumber}号「${escapeHtml(item.articleTitle || '無題')}」</strong>
+        <span>${formatJapaneseEraDate(item.issueDate)}（保存: ${item.savedAt || ''}）</span>`;
+      rowEl.appendChild(info);
+
+      const btns = document.createElement('div');
+      btns.className = 'history-row-btns';
+
+      const loadBtn = document.createElement('button');
+      loadBtn.type = 'button';
+      loadBtn.className = 'btn btn-sm btn-primary';
+      loadBtn.textContent = '読み込む';
+      loadBtn.addEventListener('click', () => {
+        if (!confirm(`第${item.issueNumber}号を読み込みますか？（現在の編集内容は上書きされます）`)) return;
+        state = clone(item.data);
+        saveState();
+        syncInputsFromState();
+        renderPreview();
+        els.historyModal.classList.add('hidden');
+        showToast(`第${item.issueNumber}号を読み込みました`);
+      });
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'btn btn-sm btn-ghost';
+      delBtn.style.color = '#dc2626';
+      delBtn.textContent = '削除';
+      delBtn.addEventListener('click', async () => {
+        if (!confirm(`第${item.issueNumber}号をクラウドから削除しますか？`)) return;
+        try {
+          await cloudRest('DELETE', `newsletter_issues?id=eq.${row.id}`);
+          renderCloudHistory();
+        } catch (err) {
+          console.warn('cloud delete failed:', err);
+          showToast('クラウドからの削除に失敗しました', true);
+        }
+      });
+
+      btns.appendChild(loadBtn);
+      btns.appendChild(delBtn);
+      rowEl.appendChild(btns);
+      listEl.appendChild(rowEl);
+    });
+  }
+
+  function bindCloudEvents() {
+    const loginBtn = document.getElementById('btnCloudLogin');
+    if (loginBtn) {
+      loginBtn.addEventListener('click', async () => {
+        const email = document.getElementById('cloudEmail').value.trim();
+        const password = document.getElementById('cloudPassword').value;
+        if (!email || !password) {
+          setCloudStatus('メールアドレスとパスワードを入力してください');
+          return;
+        }
+        setCloudStatus('ログイン中…');
+        try {
+          const data = await cloudAuthRequest('token?grant_type=password', { email, password });
+          cloudSetSession(data, email);
+          setCloudStatus('ログインしました');
+          renderCloudSection();
+          showToast('クラウドにログインしました');
+        } catch (err) {
+          console.warn('cloud login failed:', err);
+          setCloudStatus('ログインに失敗しました。メールアドレスとパスワードを確認してください');
+        }
+      });
+    }
+    const logoutBtn = document.getElementById('btnCloudLogout');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', () => {
+        cloudSession = null;
+        cloudStoreSession(null);
+        setCloudStatus('');
+        renderCloudSection();
+        showToast('クラウドからログアウトしました');
+      });
+    }
+    const refreshBtn = document.getElementById('btnCloudRefresh');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => renderCloudHistory());
+    }
+  }
+
   // ---------- Init ----------
   function init() {
     syncInputsFromState();
     renderPreview();
     bindEvents();
+    bindCloudEvents();
+    renderCloudSection();
     requestAnimationFrame(updateZoom);
   }
 
