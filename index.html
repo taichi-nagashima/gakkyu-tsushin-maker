@@ -148,6 +148,8 @@
               <p class="muted small">
                 💡 ⚙設定でAPIキーを登録すると、ボタン1つで作成できます。
                 <button type="button" class="link" data-act="open-settings">設定を開く</button>
+                ／
+                <button type="button" class="link" data-act="open-api-guide">APIキーの取り方を見る</button>
               </p>
             </div>
             <div class="status-msg" id="aiStatus" aria-live="polite"></div>
@@ -454,12 +456,40 @@
         <h3 class="mt-16">AIで文章作成（任意）</h3>
         <p class="muted small">
           Gemini APIキーを登録すると、「✨ AIで文章を作る」がボタン1つで完了します。
-          キーは <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a> で無料で取得できます。
-          キーはこのPCのブラウザ内だけに保存されます。
+          キーは無料で取得でき、このPCのブラウザ内だけに保存されます。
         </p>
         <div class="key-row">
           <input type="password" id="geminiApiKey" placeholder="APIキー（AIza…）" autocomplete="off" />
           <button type="button" class="btn btn-ghost btn-sm" id="btnToggleKey">表示</button>
+          <button type="button" class="btn btn-outline btn-sm" id="btnToggleApiGuide" aria-expanded="false">📖 APIキーの取り方を見る</button>
+        </div>
+        <div id="apiKeyGuide" class="api-guide-box" hidden>
+          <p class="api-guide-lead">
+            <strong>無料で取得できる</strong>GoogleのAPIキーを登録すると、<strong>AI文章作成がボタン1つで完了</strong>します。キーは<strong>このPCのブラウザにだけ保存</strong>されるため安心です。
+          </p>
+          <ol class="api-guide-steps">
+            <li><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio（https://aistudio.google.com/app/apikey）</a>を開く</li>
+            <li>自分のGoogleアカウントでログインする</li>
+            <li>「APIキーを作成」を押して、<code>AIza…</code> で始まるキーをコピーする</li>
+            <li>上の設定画面のキー欄に貼り付ける</li>
+          </ol>
+        </div>
+
+        <h3 class="mt-16">🎓 新年度のセットアップ（クラス変更）</h3>
+        <p class="muted small">
+          新しい年度やクラスに切り替えて、第1号から新しくスタートします。過去の号の履歴（このPC内とクラウド）は消えません。
+        </p>
+        <div class="row-2">
+          <div class="field"><label for="newYearSchoolName">新しい学校名</label><input type="text" id="newYearSchoolName" placeholder="例）〇〇小学校" /></div>
+          <div class="field"><label for="newYearClassName">新しいクラス・通信名</label><input type="text" id="newYearClassName" placeholder="例）3年2組 学級通信" /></div>
+          <div class="field"><label for="newYearPublisherName">新しい発行者</label><input type="text" id="newYearPublisherName" placeholder="例）担任 〇〇" /></div>
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="newYearResetSchedule" />
+          <span>基本の時間割（デフォルト予定）もリセットする</span>
+        </label>
+        <div class="btn-row mt-8">
+          <button type="button" class="btn btn-primary btn-sm" id="btnNewYearSetup">🎓 新年度・新クラスで第1号を開始する</button>
         </div>
 
         <h3 class="mt-16">データ</h3>

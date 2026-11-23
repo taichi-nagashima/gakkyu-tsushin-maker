@@ -1029,6 +1029,13 @@ ${ai.parentsMemo.trim() || '（特になし：日頃の感謝と体調管理の�
   // ---------- Modals ----------
   function openModal(m) { m.hidden = false; }
   function closeModal(m) { m.hidden = true; }
+  function openSettingsModal() {
+    $('newYearSchoolName').value = state.schoolName || '';
+    $('newYearClassName').value = state.className || '';
+    $('newYearPublisherName').value = state.publisherName || '';
+    $('newYearResetSchedule').checked = false;
+    openModal(els.settingsModal);
+  }
 
   function openExport() {
     render();
@@ -1258,7 +1265,17 @@ ${ai.parentsMemo.trim() || '（特になし：日頃の感謝と体調管理の�
       if (!el) return;
       const act = el.dataset.act;
       if (act === 'open-export') openExport();
-      else if (act === 'open-settings') openModal(els.settingsModal);
+      else if (act === 'open-settings') openSettingsModal();
+      else if (act === 'open-api-guide') {
+        openSettingsModal();
+        const guide = $('apiKeyGuide');
+        const btn = $('btnToggleApiGuide');
+        if (guide) {
+          guide.hidden = false;
+          if (btn) btn.setAttribute('aria-expanded', 'true');
+          guide.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
       else if (act === 'load-sample') loadSample();
       else if (act === 'dismiss-welcome') dismissWelcome();
       else if (act === 'issue-inc' || act === 'issue-dec') {
@@ -1408,7 +1425,7 @@ ${ai.parentsMemo.trim() || '（特になし：日頃の感謝と体調管理の�
 
     // header buttons
     $('btnIssueMenu').addEventListener('click', openIssueModal);
-    $('btnSettings').addEventListener('click', () => openModal(els.settingsModal));
+    $('btnSettings').addEventListener('click', openSettingsModal);
     els.btnChecks.addEventListener('click', openExport);
     $('btnNextIssue').addEventListener('click', createNextIssue);
     $('btnSaveHistory').addEventListener('click', () => { saveToHistory(); renderHistory(); showToast(`第${state.issueNumber}号を保存しました`); });
@@ -1442,6 +1459,63 @@ ${ai.parentsMemo.trim() || '（特になし：日頃の感謝と体調管理の�
       const show = els.geminiApiKey.type === 'password';
       els.geminiApiKey.type = show ? 'text' : 'password';
       e.currentTarget.textContent = show ? '隠す' : '表示';
+    });
+    $('btnToggleApiGuide').addEventListener('click', (e) => {
+      const guide = $('apiKeyGuide');
+      const nextHidden = !guide.hidden;
+      guide.hidden = nextHidden;
+      e.currentTarget.setAttribute('aria-expanded', String(!nextHidden));
+    });
+
+    // settings: new school year setup
+    $('btnNewYearSetup').addEventListener('click', () => {
+      const newSchool = $('newYearSchoolName').value.trim() || state.schoolName;
+      const newClass = $('newYearClassName').value.trim() || state.className;
+      const newPublisher = $('newYearPublisherName').value.trim() || state.publisherName;
+      const resetSchedule = $('newYearResetSchedule').checked;
+
+      const msg = [
+        '新年度・新クラスで第1号を開始します。よろしいですか？',
+        '',
+        '【変わること】',
+        `・学校名：${newSchool}`,
+        `・クラス・通信名：${newClass}`,
+        `・発行者：${newPublisher}`,
+        '・現在の号を「第1号」にリセット（記事・保護者欄・写真をクリア）',
+        resetSchedule ? '・基本の時間割（デフォルト予定）を初期状態にリセット' : '',
+        '',
+        '【残ること】',
+        '・過去の号の履歴（このPC内とクラウド）',
+        '・APIキー・クラウド設定',
+        resetSchedule ? '' : '・基本の時間割（デフォルト予定）'
+      ].filter(Boolean).join('\n');
+
+      if (!confirm(msg)) return;
+
+      saveToHistory();
+      if (resetSchedule) localStorage.removeItem(KEYS.base);
+
+      const friday = fridayOfWeek(new Date());
+      state = {
+        ...state,
+        schoolName: newSchool,
+        className: newClass,
+        publisherName: newPublisher,
+        issueNumber: 1,
+        issueDate: toISO(friday),
+        articleTitle: '',
+        articleBody: '',
+        parentsNote: '',
+        photos: [],
+        schedule: getBase().map(rowFromBase),
+        scheduleStartDate: toISO(nextMonday(friday)),
+        ai: { ...state.ai, articleMemo: '', parentsMemo: '' }
+      };
+      applyAutoHolidays();
+      syncInputs();
+      commit();
+      closeModal(els.settingsModal);
+      showToast('新年度・新クラスで第1号を開始しました');
     });
 
     // settings: backup
