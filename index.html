@@ -7,341 +7,295 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- トップツールバー -->
-  <header class="app-header no-print">
-    <div class="app-brand">
+  <!-- ===== トップバー ===== -->
+  <header class="topbar no-print">
+    <div class="brand">
       <span class="brand-badge">HOME</span>
-      <div>
-        <h1>学級通信メーカー</h1>
-        <p class="brand-sub">箇条書きメモからAI文章生成・時間割自動入力・Word / PDF / 画像出力</p>
-      </div>
+      <span class="brand-name">学級通信メーカー</span>
     </div>
-    <div class="header-actions">
-      <button type="button" class="btn btn-ghost" id="btnNextIssue" title="号数を+1、発行日を翌週に進めます">
-        ＋ 次の号を作る
-      </button>
-      <button type="button" class="btn btn-ghost" id="btnHistory" title="保存した過去の号を読み込み・管理">
-        履歴・保存
-      </button>
-      <button type="button" class="btn btn-ghost" id="btnSample" title="記入例を読み込んでプレビュー確認">
-        記入例を入れる
-      </button>
-      <div class="export-group">
-        <button type="button" class="btn btn-word" id="btnExportDocx">
-          📄 Word (.docx)
-        </button>
-        <button type="button" class="btn btn-image" id="btnExportPng">
-          🖼️ 画像 (LINE用)
-        </button>
-        <button type="button" class="btn btn-pdf" id="btnPrintPdf">
-          🖨️ PDF / 印刷
-        </button>
-      </div>
-    </div>
+
+    <button type="button" class="doc-chip" id="btnIssueMenu" title="号の管理（次の号を作る・過去の号を開く）">
+      <span class="doc-chip-num" id="docChipNum">第1号</span>
+      <span class="doc-chip-date" id="docChipDate">--</span>
+      <span class="doc-chip-caret">▾</span>
+    </button>
+
+    <span class="save-status" id="saveStatus">✓ 自動保存済み</span>
+
+    <div class="topbar-spacer"></div>
+
+    <button type="button" class="btn btn-ghost" id="btnSettings">⚙ 設定</button>
+    <button type="button" class="btn btn-primary btn-lg" data-act="open-export">完成・書き出し</button>
   </header>
 
-  <!-- メイン2ペインレイアウト -->
-  <main class="app-main">
-    <!-- 左ペイン：入力エディタ -->
-    <aside class="editor-pane no-print">
-      <nav class="editor-tabs" role="tablist">
-        <button type="button" class="tab-btn active" data-tab="basic">基本・記事</button>
-        <button type="button" class="tab-btn" data-tab="ai">✨ AI作成</button>
-        <button type="button" class="tab-btn" data-tab="photos">📷 写真</button>
-        <button type="button" class="tab-btn" data-tab="schedule">📅 来週の予定</button>
+  <main class="layout">
+    <!-- ===== 左：入力エリア ===== -->
+    <aside class="editor no-print">
+      <nav class="stepper" id="stepper" aria-label="入力ステップ">
+        <button type="button" class="step" data-target="sec-issue"><span class="step-dot">1</span><span class="step-label">日付</span></button>
+        <button type="button" class="step" data-target="sec-article"><span class="step-dot">2</span><span class="step-label">記事</span></button>
+        <button type="button" class="step" data-target="sec-photos"><span class="step-dot">3</span><span class="step-label">写真</span></button>
+        <button type="button" class="step" data-target="sec-parents"><span class="step-dot">4</span><span class="step-label">保護者へ</span></button>
+        <button type="button" class="step" data-target="sec-schedule"><span class="step-dot">5</span><span class="step-label">予定</span></button>
       </nav>
 
-      <div class="editor-scroll">
-        <!-- タブ1：基本情報・記事・保護者向け -->
-        <section class="tab-panel active" id="tab-basic">
-          <div class="card">
-            <div class="card-header">
-              <h2>号数・発行日</h2>
-              <span class="hint-pill">来週の予定日も自動連動</span>
-            </div>
-            <div class="form-grid-2">
-              <label class="field">
-                <span>号数</span>
-                <div class="input-inline">
-                  <span>第</span>
-                  <input type="number" id="issueNumber" min="1" max="999" value="1" />
-                  <span>号</span>
-                </div>
-              </label>
-              <label class="field">
-                <span>発行日</span>
-                <input type="date" id="issueDate" />
-              </label>
-            </div>
-            <div class="auto-date-preview" id="issueDateDisplay">令和8年〇〇月〇〇日(金) 発行</div>
+      <div class="editor-scroll" id="editorScroll">
+        <!-- はじめての方へ -->
+        <div class="welcome" id="welcomeBanner" hidden>
+          <div class="welcome-title">はじめての方へ 👋</div>
+          <ol>
+            <li>右上の <b>⚙ 設定</b> で学校名・クラス・発行者を確認</li>
+            <li>下の <b>1〜5</b> を上から順に入力（右のプレビューに即反映）</li>
+            <li>右上の <b>完成・書き出し</b> で Word / LINE用画像 / 印刷</li>
+          </ol>
+          <div class="welcome-actions">
+            <button type="button" class="btn btn-outline btn-sm" data-act="load-sample">記入例で試してみる</button>
+            <button type="button" class="link" data-act="dismiss-welcome">閉じる</button>
           </div>
+        </div>
 
-          <div class="card">
-            <div class="card-header">
-              <h2>メイン記事（左側）</h2>
-              <button type="button" class="btn-link" id="btnJumpToAi1">✨ AIで書く</button>
-            </div>
-            <label class="field">
-              <span>タイトル</span>
-              <input type="text" id="articleTitle" placeholder="例：合唱コンクールに向けて本格始動！" />
-            </label>
-            <label class="field">
-              <span>記事本文</span>
-              <textarea id="articleBody" rows="10" placeholder="ここに記事本文を入力します。左上の「✨ AI作成」タブを使うと、箇条書きメモから自動で文章を作成できます。"></textarea>
-            </label>
-            <div class="field-meta">
-              <span id="articleCharCount">0文字</span>
-              <label class="font-size-control">
-                <span>文字サイズ:</span>
-                <select id="articleFontSize">
-                  <option value="11.5">小 (11.5px)</option>
-                  <option value="12.5">やや小 (12.5px)</option>
-                  <option value="13.5" selected>標準 (13.5px)</option>
-                  <option value="15">大 (15px)</option>
-                </select>
-              </label>
-            </div>
+        <!-- 1. 号数と発行日 -->
+        <section class="sec" id="sec-issue">
+          <div class="sec-head">
+            <span class="sec-num">1</span>
+            <h2>号数と発行日</h2>
           </div>
-
-          <div class="card">
-            <div class="card-header">
-              <h2>★保護者の皆様へ★（右中央）</h2>
-              <button type="button" class="btn-link" id="btnJumpToAi2">✨ AIで書く</button>
-            </div>
-            <label class="field">
-              <span>お知らせ内容</span>
-              <textarea id="parentsNote" rows="5" placeholder="例：来週の水曜日は授業参観があります。上履きをご持参ください。"></textarea>
-            </label>
-            <div class="field-meta">
-              <span id="parentsCharCount">0文字</span>
-              <label class="font-size-control">
-                <span>文字サイズ:</span>
-                <select id="parentsFontSize">
-                  <option value="11">小 (11px)</option>
-                  <option value="12" selected>標準 (12px)</option>
-                  <option value="13.5">大 (13.5px)</option>
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <details class="card collapsible">
-            <summary class="card-header clickable">
-              <h2>学校名・クラス・発行者設定</h2>
-              <span class="chevron">▼</span>
-            </summary>
-            <div class="collapsible-body">
-              <label class="field">
-                <span>通信ロゴ名</span>
-                <input type="text" id="logoText" value="HOME" />
-              </label>
-              <label class="field">
-                <span>学校名</span>
-                <input type="text" id="schoolName" value="川崎市立野川中学校" />
-              </label>
-              <label class="field">
-                <span>クラス・通信名</span>
-                <input type="text" id="className" value="３年３組 学級通信" />
-              </label>
-              <label class="field">
-                <span>発行者</span>
-                <input type="text" id="publisherName" value="永嶋 裕太" />
-              </label>
-            </div>
-          </details>
-        </section>
-
-        <!-- タブ2：AI文章作成 -->
-        <section class="tab-panel" id="tab-ai">
-          <div class="card ai-card">
-            <div class="card-header">
-              <h2>✨ 箇条書きメモから自動文章作成</h2>
-            </div>
-            <p class="privacy-note">
-              🔒 <strong>個人情報への配慮：</strong>生徒の氏名など個人を特定できる情報は入力せず、「生徒たち」「Aさん」等の表現にしてください。
-            </p>
-
-            <label class="field">
-              <span>記事にしたいメモ（箇条書きでOK）</span>
-              <textarea id="aiArticleMemo" rows="5" placeholder="例：&#10;・今週から体育祭の練習がスタート&#10;・リレーのバトンパスを休み時間も自主練していた&#10;・声を掛け合う姿が増えてクラスの一体感が出てきた&#10;・水分補給と早寝早起きを心がけてほしい"></textarea>
-            </label>
-
-            <label class="field">
-              <span>★保護者の皆様へ★ に書きたいメモ（任意）</span>
-              <textarea id="aiParentsMemo" rows="3" placeholder="例：&#10;・来週火曜までに進路希望調査の提出をお願いします&#10;・体操服の洗濯が間に合わない場合はジャージ可"></textarea>
-            </label>
-
-            <div class="form-grid-2">
-              <label class="field">
-                <span>文章の雰囲気</span>
-                <select id="aiTone">
-                  <option value="warm">温かく親しみやすい（標準）</option>
-                  <option value="energetic">元気で前向き・生徒を励ます</option>
-                  <option value="formal">丁寧・保護者向けしっかり</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>記事の文字数めやす</span>
-                <select id="aiLength">
-                  <option value="short">短め（250〜350字）</option>
-                  <option value="medium" selected>標準（400〜550字）</option>
-                  <option value="long">長め（600〜750字）</option>
-                </select>
-              </label>
-            </div>
-
-            <div class="ai-mode-box">
-              <h3>方法1：ボタン1つで自動生成（Gemini API）</h3>
-              <div class="api-key-row">
-                <input type="password" id="geminiApiKey" placeholder="Gemini APIキー（ブラウザ内のみに保存）" autocomplete="off" />
-                <button type="button" class="btn btn-sm btn-ghost" id="btnToggleKey">表示</button>
-              </div>
-              <p class="help-text">
-                Google AI Studio で無料取得したキーを入力すると、ここから直接文章を生成できます。キーはPCのブラウザ内にのみ保存されます。
-              </p>
-              <button type="button" class="btn btn-primary btn-block" id="btnGenerateAi">
-                ✨ AIでタイトル・記事・保護者向け文を自動生成
-              </button>
-              <div id="aiStatus" class="status-msg" aria-live="polite"></div>
-            </div>
-
-            <div class="ai-mode-box secondary">
-              <h3>方法2：APIキー不要（普段のChatGPT / Geminiを使う）</h3>
-              <p class="help-text">
-                下のボタンで専用プロンプトをコピーして普段のAIに貼り付け、返ってきた文章をここに貼るだけで自動反映されます。
-              </p>
-              <button type="button" class="btn btn-outline btn-block" id="btnCopyPrompt">
-                📋 AI用プロンプトをコピー
-              </button>
-              <label class="field mt-8">
-                <span>AIの返答を貼り付け</span>
-                <textarea id="aiPasteResult" rows="4" placeholder="AIから返ってきたテキストをここに貼り付けて「お便りに反映」を押してください"></textarea>
-              </label>
-              <button type="button" class="btn btn-secondary btn-block" id="btnApplyPastedAi">
-                📥 貼り付けた内容をタイトル・記事・保護者欄に反映
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- タブ3：フォトコーナー -->
-        <section class="tab-panel" id="tab-photos">
-          <div class="card">
-            <div class="card-header">
-              <h2>📷 フォトコーナー（最大4枚）</h2>
-              <button type="button" class="btn-link danger" id="btnClearPhotos">すべて削除</button>
-            </div>
-            <label class="field">
-              <span>コーナー見出し</span>
-              <input type="text" id="photoCornerTitle" value="フォトコーナー" />
-            </label>
-            <div class="dropzone" id="photoDropzone">
-              <input type="file" id="photoInput" accept="image/*" multiple hidden />
-              <div class="dropzone-icon">📸</div>
-              <p><strong>ここに写真をドラッグ＆ドロップ</strong></p>
-              <p class="help-text">またはクリックして写真を選択（1〜4枚を自動で綺麗に配置します）</p>
-            </div>
-            <div id="photoList" class="photo-list"></div>
-          </div>
-        </section>
-
-        <!-- タブ4：来週の予定 -->
-        <section class="tab-panel" id="tab-schedule">
-          <div class="card">
-            <div class="card-header">
-              <h2>📅 来週の予定ヘッダー</h2>
-              <button type="button" class="btn-link" id="btnAutoCalcDates">発行日から自動計算</button>
-            </div>
-            <div class="form-grid-2">
-              <label class="field">
-                <span>開始日（月）</span>
-                <input type="date" id="scheduleStartDate" />
-              </label>
-              <label class="field">
-                <span>要エプロン持参</span>
-                <input type="text" id="apronGroups" placeholder="例：1・2・3" value="〇・〇・〇" />
-              </label>
-            </div>
-            <div class="quick-apron">
-              <span>クイック選択：</span>
-              <button type="button" class="chip" data-apron="1・2・3">1・2・3班</button>
-              <button type="button" class="chip" data-apron="4・5・6">4・5・6班</button>
-              <button type="button" class="chip" data-apron="1・3・5">1・3・5班</button>
-              <button type="button" class="chip" data-apron="2・4・6">2・4・6班</button>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-header">
-              <h2>時間割・給/清/部・備考</h2>
-              <div class="preset-actions">
-                <button type="button" class="btn-link" id="btnResetSchedule" title="保存済みの基本時間割に戻す">基本に戻す</button>
-                <button type="button" class="btn-link" id="btnSaveDefaultSchedule" title="今の時間割を基本時間割として保存">基本として保存</button>
+          <div class="row-2">
+            <div class="field">
+              <label>号数</label>
+              <div class="num-stepper">
+                <button type="button" data-act="issue-dec" aria-label="号数を減らす">−</button>
+                <span>第</span>
+                <input type="number" min="1" max="999" data-bind="issueNumber" aria-label="号数" />
+                <span>号</span>
+                <button type="button" data-act="issue-inc" aria-label="号数を増やす">＋</button>
               </div>
             </div>
-            <p class="help-text mb-8">
-              💡 <strong>給・清・部</strong> はクリックで <code>〇 → × → △ → －</code> と切り替わります。1〜6限は2文字で自動改行されます（例：<code>社臼</code>→縦2行）。
-            </p>
-            <div id="scheduleEditorList" class="schedule-editor-list"></div>
+            <div class="field">
+              <label for="issueDate">発行日</label>
+              <input type="date" id="issueDate" />
+            </div>
+          </div>
+          <div class="chip-row">
+            <button type="button" class="chip" data-act="date-this-fri">今週の金曜</button>
+            <button type="button" class="chip" data-act="date-next-fri">来週の金曜</button>
+          </div>
+          <div class="derived">
+            <div>📄 <span id="issueDateEra">--</span></div>
+            <div class="muted">📅 来週の予定：<span id="issueWeekRange">--</span>（自動）</div>
           </div>
         </section>
+
+        <!-- 2. メイン記事 -->
+        <section class="sec" id="sec-article">
+          <div class="sec-head">
+            <span class="sec-num">2</span>
+            <h2>メイン記事</h2>
+            <span class="fit-chip" id="fitArticle"></span>
+          </div>
+
+          <button type="button" class="btn btn-ai btn-block" id="btnToggleAi" aria-expanded="false">
+            ✨ 箇条書きメモからAIで文章を作る
+          </button>
+
+          <div class="ai-panel" id="aiPanel" hidden>
+            <p class="note-warn">🔒 生徒の名前など、個人が特定できる情報は書かないでください。</p>
+            <div class="field">
+              <label>記事にしたいこと（箇条書きでOK）</label>
+              <textarea rows="4" data-bind-ai="articleMemo" placeholder="例）&#10;・体育祭の練習がスタート&#10;・休み時間もバトンパスを自主練&#10;・声を掛け合う姿が増えてきた"></textarea>
+            </div>
+            <div class="field">
+              <label>保護者へのお知らせ（任意）</label>
+              <textarea rows="2" data-bind-ai="parentsMemo" placeholder="例）進路希望調査は来週火曜まで"></textarea>
+            </div>
+            <div class="seg-row">
+              <span class="seg-label">雰囲気</span>
+              <div class="seg" data-seg="tone">
+                <button type="button" data-val="warm">あたたかく</button>
+                <button type="button" data-val="energetic">元気に</button>
+                <button type="button" data-val="formal">ていねいに</button>
+              </div>
+            </div>
+            <div class="seg-row">
+              <span class="seg-label">長さ</span>
+              <div class="seg" data-seg="length">
+                <button type="button" data-val="short">短め</button>
+                <button type="button" data-val="medium">ふつう</button>
+                <button type="button" data-val="long">長め</button>
+              </div>
+            </div>
+
+            <!-- APIキーあり：ワンクリック -->
+            <div id="aiModeApi" hidden>
+              <button type="button" class="btn btn-primary btn-block" id="btnGenerateAi">✨ 作成してお便りに入れる</button>
+              <p class="muted small center">タイトル・本文・保護者欄をまとめて作成します</p>
+            </div>
+
+            <!-- APIキーなし：コピペ -->
+            <div id="aiModeManual">
+              <ol class="mini-steps">
+                <li>
+                  <button type="button" class="btn btn-outline btn-sm" id="btnCopyPrompt">📋 AIへの指示文をコピー</button>
+                </li>
+                <li>
+                  いつものAIに貼り付けて送信
+                  （<a href="https://gemini.google.com/app" target="_blank" rel="noopener">Gemini</a> /
+                  <a href="https://chatgpt.com/" target="_blank" rel="noopener">ChatGPT</a>）
+                </li>
+                <li>返ってきた文章を下に貼り付け → <b>自動でお便りに入ります</b></li>
+              </ol>
+              <textarea id="aiPasteBox" rows="3" class="paste-box" placeholder="ここにAIの返答を貼り付け（Ctrl+V）"></textarea>
+              <p class="muted small">
+                💡 ⚙設定でAPIキーを登録すると、ボタン1つで作成できます。
+                <button type="button" class="link" data-act="open-settings">設定を開く</button>
+              </p>
+            </div>
+            <div class="status-msg" id="aiStatus" aria-live="polite"></div>
+          </div>
+
+          <div class="field">
+            <label for="articleTitle">タイトル</label>
+            <input type="text" id="articleTitle" data-bind="articleTitle" placeholder="例）合唱コンクールに向けて本格始動！" />
+          </div>
+          <div class="field">
+            <label for="articleBody">本文 <span class="muted small" id="articleCount"></span></label>
+            <textarea id="articleBody" rows="11" data-bind="articleBody" placeholder="ここに本文を入力。上の「✨ AIで文章を作る」も使えます。"></textarea>
+          </div>
+          <div class="field-foot">
+            <label>文字の大きさ
+              <select data-bind="articleFontMode">
+                <option value="auto">自動（枠に合わせる）</option>
+                <option value="large">大</option>
+                <option value="normal">標準</option>
+                <option value="small">小</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <!-- 3. フォトコーナー -->
+        <section class="sec" id="sec-photos">
+          <div class="sec-head">
+            <span class="sec-num">3</span>
+            <h2>フォトコーナー</h2>
+            <span class="opt-tag">任意・最大4枚</span>
+          </div>
+          <div class="field">
+            <label for="photoCornerTitle">見出し</label>
+            <input type="text" id="photoCornerTitle" data-bind="photoCornerTitle" />
+          </div>
+          <div class="photo-editor" id="photoEditor"></div>
+          <input type="file" id="photoInput" accept="image/*" multiple hidden />
+          <p class="muted small">ドラッグ＆ドロップ、Ctrl+V で貼り付け、右のプレビューの枠へのドロップでも追加できます。</p>
+        </section>
+
+        <!-- 4. 保護者の皆様へ -->
+        <section class="sec" id="sec-parents">
+          <div class="sec-head">
+            <span class="sec-num">4</span>
+            <h2>★保護者の皆様へ★</h2>
+            <span class="fit-chip" id="fitParents"></span>
+          </div>
+          <div class="chip-row">
+            <span class="muted small">定型文：</span>
+            <button type="button" class="chip" data-tpl="thanks">日頃の感謝</button>
+            <button type="button" class="chip" data-tpl="submit">提出のお願い</button>
+            <button type="button" class="chip" data-tpl="items">持ち物</button>
+            <button type="button" class="chip" data-tpl="event">行事のお知らせ</button>
+            <button type="button" class="chip" data-tpl="health">体調管理</button>
+          </div>
+          <div class="field">
+            <textarea id="parentsNote" rows="7" data-bind="parentsNote" placeholder="例）来週水曜は授業参観です。上履きをご持参ください。"></textarea>
+          </div>
+          <div class="field-foot">
+            <span class="muted small" id="parentsCount"></span>
+            <label>文字の大きさ
+              <select data-bind="parentsFontMode">
+                <option value="auto">自動（枠に合わせる）</option>
+                <option value="large">大</option>
+                <option value="normal">標準</option>
+                <option value="small">小</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <!-- 5. 来週の予定 -->
+        <section class="sec" id="sec-schedule">
+          <div class="sec-head">
+            <span class="sec-num">5</span>
+            <h2>来週の予定</h2>
+          </div>
+          <div class="row-2">
+            <div class="field">
+              <label for="scheduleStartDate">週の始まり（月曜）</label>
+              <input type="date" id="scheduleStartDate" />
+            </div>
+            <div class="field">
+              <label>期間</label>
+              <div class="derived-box" id="weekRangeBox">--</div>
+            </div>
+          </div>
+          <div class="field">
+            <label>要エプロン持参の班 <span class="muted small">（タップで選択）</span></label>
+            <div class="apron-chips" id="apronChips"></div>
+          </div>
+
+          <div class="sch-editor" id="scheduleEditor"></div>
+
+          <p class="muted small">
+            給・清・部はクリックで「〇 → × → △ → －」。種類を「行事」「休み」にすると1〜6限が1つの欄になります。祝日は自動で「休み」になります。
+          </p>
+          <div class="sch-actions">
+            <button type="button" class="link" id="btnSaveBase">この時間割を「いつもの時間割」に登録</button>
+            <button type="button" class="link" id="btnResetBase">いつもの時間割に戻す</button>
+          </div>
+        </section>
+
+        <div class="editor-end">
+          <p>入力が終わったら</p>
+          <button type="button" class="btn btn-primary btn-lg btn-block" data-act="open-export">完成・書き出しへ →</button>
+        </div>
       </div>
     </aside>
 
-    <!-- 右ペイン：リアルタイムA4横プレビュー -->
-    <section class="preview-pane">
-      <div class="preview-toolbar no-print">
-        <div class="preview-info">
-          <span class="dot-live"></span>
-          <span>A4横 リアルタイムプレビュー（そのままWord / PDF / 画像になります）</span>
-        </div>
-        <div class="zoom-controls">
-          <button type="button" class="btn-zoom" id="btnZoomOut" title="縮小">－</button>
-          <span id="zoomLabel">自動</span>
-          <button type="button" class="btn-zoom" id="btnZoomIn" title="拡大">＋</button>
-          <button type="button" class="btn-zoom" id="btnZoomFit" title="画面に合わせる">フィット</button>
-        </div>
+    <!-- ===== 右：プレビュー ===== -->
+    <section class="preview">
+      <div class="preview-bar no-print">
+        <span class="preview-hint">👆 プレビューをクリックすると、その場所の入力欄へ移動します</span>
+        <button type="button" class="check-pill" id="btnChecks"></button>
+        <button type="button" class="btn-zoom" id="btnZoomToggle">🔍 拡大</button>
       </div>
 
       <div class="preview-viewport" id="previewViewport">
         <div class="sheet-wrapper" id="sheetWrapper">
-          <!-- A4横（297mm × 210mm 比率：1122px × 794px） -->
+          <!-- A4横（1122px × 794px） -->
           <div class="newsletter-sheet" id="newsletterSheet">
             <div class="sheet-frame">
               <!-- 左カラム -->
               <div class="col-left">
-                <div class="header-box">
+                <div class="header-box" data-edit="sec-issue">
                   <div class="header-logo-cell">
                     <span class="home-logo-text" id="pvLogoText">HOME</span>
-                    <!-- 赤い屋根の家のオリジナルSVGイラスト -->
                     <svg class="house-svg" id="houseSvg" viewBox="0 0 110 92" xmlns="http://www.w3.org/2000/svg" aria-label="家のイラスト">
-                      <!-- 芝生・土台 -->
                       <rect x="6" y="84" width="98" height="4" rx="2" fill="#70AD47" />
-                      <!-- 左の植え込み -->
                       <circle cx="15" cy="76" r="9" fill="#6BB33F" />
                       <circle cx="22" cy="79" r="7" fill="#5CA033" />
                       <circle cx="12" cy="80" r="6" fill="#7AC34B" />
-                      <!-- 花（赤・黄） -->
                       <circle cx="13" cy="74" r="1.8" fill="#FFF200" />
                       <circle cx="18" cy="78" r="1.8" fill="#FF4B4B" />
                       <circle cx="10" cy="81" r="1.5" fill="#FF75A0" />
-                      <!-- 家の壁（白い本体） -->
                       <rect x="24" y="42" width="72" height="44" fill="#FFFFFF" stroke="#5A4A42" stroke-width="2" />
-                      <!-- 赤い屋根（台形＋瓦ライン） -->
                       <polygon points="16,44 28,12 92,12 104,44" fill="#E3262E" stroke="#A61920" stroke-width="2" stroke-linejoin="round" />
-                      <!-- 屋根の横線・縦線ディテール -->
                       <line x1="22" y1="28" x2="98" y2="28" stroke="#F46A6A" stroke-width="1.3" opacity="0.7" />
                       <line x1="26" y1="19" x2="94" y2="19" stroke="#F46A6A" stroke-width="1.1" opacity="0.6" />
                       <line x1="20" y1="36" x2="100" y2="36" stroke="#F46A6A" stroke-width="1.3" opacity="0.7" />
-                      <!-- ドア -->
-                      <rect x="33" y="54" width="16" height="32" rx="1.5" fill="#B5461E" stroke="#6B270F" stroke-width="1.6" />
+                      <rect x="33" y="54" width="16" height="32" rx="1.5" fill="#F08A24" stroke="#9A4A0F" stroke-width="1.6" />
                       <circle cx="45.5" cy="71" r="1.8" fill="#FFE066" />
-                      <!-- 青い窓2つ -->
                       <rect x="57" y="53" width="13" height="14" rx="1" fill="#66B2FF" stroke="#3B5998" stroke-width="1.5" />
                       <rect x="75" y="53" width="13" height="14" rx="1" fill="#66B2FF" stroke="#3B5998" stroke-width="1.5" />
                       <line x1="63.5" y1="53" x2="63.5" y2="67" stroke="#FFFFFF" stroke-width="1" opacity="0.7" />
                       <line x1="81.5" y1="53" x2="81.5" y2="67" stroke="#FFFFFF" stroke-width="1" opacity="0.7" />
-                      <!-- 窓下の花壇プランター -->
                       <rect x="54" y="76" width="38" height="10" rx="1" fill="#A06035" stroke="#5E351B" stroke-width="1.4" />
                       <ellipse cx="62" cy="75" rx="7" ry="4" fill="#6BB33F" />
                       <ellipse cx="73" cy="74" rx="8" ry="4.5" fill="#5CA033" />
@@ -353,62 +307,51 @@
                     </svg>
                   </div>
                   <div class="header-meta-cell">
-                    <div id="pvSchoolName">川崎市立野川中学校</div>
-                    <div id="pvClassIssue">３年３組 学級通信 第１号</div>
-                    <div id="pvPublisher">発行者 永嶋 裕太</div>
-                    <div id="pvIssueDate">令和8年〇〇月〇〇日(金) 発行</div>
+                    <div id="pvSchoolName"></div>
+                    <div id="pvClassIssue"></div>
+                    <div id="pvPublisher"></div>
+                    <div id="pvIssueDate"></div>
                   </div>
                 </div>
 
-                <h2 class="pv-article-title" id="pvArticleTitle">タイトル</h2>
-                <div class="pv-article-body" id="pvArticleBody">記事</div>
+                <div class="article-area" data-edit="sec-article">
+                  <h2 class="pv-article-title" id="pvArticleTitle">タイトル</h2>
+                  <div class="pv-article-body" id="pvArticleBody"></div>
+                  <div class="overflow-badge no-print" id="ovArticle" hidden>⚠ 本文が枠からはみ出しています</div>
+                </div>
               </div>
 
               <!-- 右カラム -->
               <div class="col-right">
-                <!-- ① フォトコーナー -->
-                <div class="photo-corner-box">
+                <div class="photo-corner-box" data-edit="sec-photos" id="pvPhotoBox">
                   <div class="box-title" id="pvPhotoTitle">フォトコーナー</div>
-                  <div class="photo-grid count-0" id="pvPhotoGrid">
-                    <div class="photo-empty-hint no-print-placeholder">
-                      左の「📷 写真」タブから写真を追加できます
-                    </div>
-                  </div>
+                  <div class="photo-grid count-0" id="pvPhotoGrid"></div>
                 </div>
 
-                <!-- ② ★保護者の皆様へ★ -->
-                <div class="parents-box">
+                <div class="parents-box" data-edit="sec-parents">
                   <div class="box-title">★保護者の皆様へ★</div>
                   <div class="pv-parents-body" id="pvParentsBody"></div>
+                  <div class="overflow-badge no-print" id="ovParents" hidden>⚠ はみ出しています</div>
                 </div>
 
-                <!-- ③ 来週の予定表 -->
-                <div class="schedule-box">
-                  <table class="schedule-table" id="pvScheduleTable">
+                <div class="schedule-box" data-edit="sec-schedule">
+                  <table class="schedule-table">
+                    <colgroup>
+                      <col style="width:26px" /><col style="width:54px" />
+                      <col style="width:27px" /><col style="width:27px" /><col style="width:27px" />
+                      <col style="width:27px" /><col style="width:27px" /><col style="width:27px" />
+                      <col style="width:25px" /><col style="width:25px" /><col style="width:25px" />
+                      <col />
+                    </colgroup>
                     <thead>
-                      <tr>
-                        <th colspan="12" class="schedule-banner" id="pvScheduleBanner">
-                          来週の予定(〇〇月〇〇日～〇〇月〇〇日)　要エプロン持参〇・〇・〇班
-                        </th>
-                      </tr>
+                      <tr><th colspan="12" class="schedule-banner" id="pvScheduleBanner"></th></tr>
                       <tr class="schedule-col-headers">
-                        <th class="col-month">月</th>
-                        <th class="col-day">日</th>
-                        <th class="col-period">1</th>
-                        <th class="col-period">2</th>
-                        <th class="col-period">3</th>
-                        <th class="col-period">4</th>
-                        <th class="col-period">5</th>
-                        <th class="col-period">6</th>
-                        <th class="col-flag">給</th>
-                        <th class="col-flag">清</th>
-                        <th class="col-flag">部</th>
-                        <th class="col-note">備考</th>
+                        <th>月</th><th>日</th>
+                        <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th>
+                        <th>給</th><th>清</th><th>部</th><th>備考</th>
                       </tr>
                     </thead>
-                    <tbody id="pvScheduleBody">
-                      <!-- JSで自動描画 -->
-                    </tbody>
+                    <tbody id="pvScheduleBody"></tbody>
                   </table>
                 </div>
               </div>
@@ -419,51 +362,123 @@
     </section>
   </main>
 
-  <!-- 履歴・保存モーダル -->
-  <div class="modal-backdrop hidden" id="historyModal">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h2>履歴・バックアップ管理</h2>
-        <button type="button" class="modal-close" id="btnCloseHistory">×</button>
+  <!-- ===== 完成・書き出し ===== -->
+  <div class="modal" id="exportModal" hidden>
+    <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
+      <div class="modal-head">
+        <h2 id="exportTitle">完成・書き出し <span class="muted" id="exportIssueLabel"></span></h2>
+        <button type="button" class="modal-x" data-close aria-label="閉じる">×</button>
       </div>
       <div class="modal-body">
-        <div class="cloud-box">
-          <h3>☁️ クラウド保存（別のPCでも読み込めます）</h3>
-          <div id="cloudLoggedOut">
-            <div class="api-key-row">
-              <input type="email" id="cloudEmail" placeholder="メールアドレス" autocomplete="username" />
-              <input type="password" id="cloudPassword" placeholder="パスワード" autocomplete="current-password" />
-              <button type="button" class="btn btn-sm btn-primary" id="btnCloudLogin">ログイン</button>
-            </div>
-            <p class="help-text">ログインすると「現在の号を履歴に保存」でクラウドにも自動保存されます。家計簿アプリと同じアカウント（メールアドレスとパスワード）が使えます。</p>
-          </div>
-          <div id="cloudLoggedIn" class="hidden">
-            <p class="help-text"><strong id="cloudUserEmail"></strong> でログイン中です。「現在の号を履歴に保存」を押すと、このPCとクラウドの両方に保存されます。</p>
-            <div class="history-actions">
-              <button type="button" class="btn btn-sm btn-outline" id="btnCloudRefresh">☁️ クラウド履歴を再読み込み</button>
-              <button type="button" class="btn btn-sm btn-ghost" id="btnCloudLogout">ログアウト</button>
-            </div>
-            <h3 class="mt-16">☁️ クラウドの保存済みの号</h3>
-            <div id="cloudHistoryList" class="history-list"></div>
-          </div>
-          <p class="help-text" id="cloudStatus"></p>
+        <div class="check-list" id="checkList"></div>
+        <div class="export-cards">
+          <button type="button" class="export-card" data-export="png">
+            <span class="ec-icon">📱</span>
+            <b>LINEで送る</b>
+            <span>画像（PNG）で保存。<br />スマホでそのまま見られます</span>
+          </button>
+          <button type="button" class="export-card" data-export="docx">
+            <span class="ec-icon">📝</span>
+            <b>Wordで仕上げる</b>
+            <span>Word / Googleドキュメントで<br />開いて編集できます（.docx）</span>
+          </button>
+          <button type="button" class="export-card" data-export="print">
+            <span class="ec-icon">🖨️</span>
+            <b>印刷・PDF</b>
+            <span>A4横で印刷。プリンターで<br />「PDFに保存」を選ぶとPDFに</span>
+          </button>
         </div>
-        <div class="history-actions">
-          <button type="button" class="btn btn-primary" id="btnSaveCurrentToHistory">💾 現在の号を履歴に保存</button>
-          <button type="button" class="btn btn-outline" id="btnExportJson">⬇️ バックアップ書き出し (JSON)</button>
-          <label class="btn btn-outline">
-            ⬆️ バックアップ読込
-            <input type="file" id="importJsonInput" accept=".json" hidden />
-          </label>
-        </div>
-        <h3 class="mt-16">保存済みの号</h3>
-        <div id="historyList" class="history-list"></div>
+        <p class="muted small center">書き出すと、この号は自動で「号の一覧」に保存されます。</p>
       </div>
     </div>
   </div>
 
-  <!-- トースト通知 -->
-  <div id="toast" class="toast hidden" role="status"></div>
+  <!-- ===== 号の管理 ===== -->
+  <div class="modal" id="issueModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="issueModalTitle">
+      <div class="modal-head">
+        <h2 id="issueModalTitle">号の管理</h2>
+        <button type="button" class="modal-x" data-close aria-label="閉じる">×</button>
+      </div>
+      <div class="modal-body">
+        <button type="button" class="next-issue-card" id="btnNextIssue">
+          <b>＋ 次の号を作る</b>
+          <span id="nextIssueDesc"></span>
+        </button>
+        <div class="row-between mt-12">
+          <h3>保存した号</h3>
+          <button type="button" class="btn btn-outline btn-sm" id="btnSaveHistory">今の号を保存</button>
+        </div>
+        <div class="history-list" id="historyList"></div>
+        <div class="cloud-box">
+          <h3>☁️ クラウド保存（別のPCでも読み込めます）</h3>
+          <div id="cloudLoggedOut">
+            <div class="cloud-login-row">
+              <input type="email" id="cloudEmail" placeholder="メールアドレス" autocomplete="username" />
+              <input type="password" id="cloudPassword" placeholder="パスワード" autocomplete="current-password" />
+              <button type="button" class="btn btn-primary btn-sm" id="btnCloudLogin">ログイン</button>
+            </div>
+            <p class="muted small">ログインすると、号を保存したときにクラウドにも自動保存されます。家計簿アプリと同じアカウント（メールアドレスとパスワード）が使えます。</p>
+          </div>
+          <div id="cloudLoggedIn" hidden>
+            <p class="muted small"><strong id="cloudUserEmail"></strong> でログイン中です。号を保存すると、このPCとクラウドの両方に保存されます。</p>
+            <div class="cloud-actions">
+              <button type="button" class="btn btn-outline btn-sm" id="btnCloudRefresh">☁️ クラウド履歴を再読み込み</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btnCloudLogout">ログアウト</button>
+            </div>
+            <h3 class="mt-12">☁️ クラウドの保存済みの号</h3>
+            <div class="history-list" id="cloudHistoryList"></div>
+          </div>
+          <p class="muted small" id="cloudStatus"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 設定 ===== -->
+  <div class="modal" id="settingsModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-head">
+        <h2 id="settingsTitle">⚙ 設定</h2>
+        <button type="button" class="modal-x" data-close aria-label="閉じる">×</button>
+      </div>
+      <div class="modal-body">
+        <h3>クラス情報</h3>
+        <div class="row-2">
+          <div class="field"><label>学校名</label><input type="text" data-bind="schoolName" /></div>
+          <div class="field"><label>クラス・通信名</label><input type="text" data-bind="className" /></div>
+          <div class="field"><label>発行者</label><input type="text" data-bind="publisherName" /></div>
+          <div class="field"><label>通信のロゴ</label><input type="text" data-bind="logoText" /></div>
+        </div>
+
+        <h3 class="mt-16">AIで文章作成（任意）</h3>
+        <p class="muted small">
+          Gemini APIキーを登録すると、「✨ AIで文章を作る」がボタン1つで完了します。
+          キーは <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a> で無料で取得できます。
+          キーはこのPCのブラウザ内だけに保存されます。
+        </p>
+        <div class="key-row">
+          <input type="password" id="geminiApiKey" placeholder="APIキー（AIza…）" autocomplete="off" />
+          <button type="button" class="btn btn-ghost btn-sm" id="btnToggleKey">表示</button>
+        </div>
+
+        <h3 class="mt-16">データ</h3>
+        <div class="btn-row">
+          <button type="button" class="btn btn-outline btn-sm" id="btnExportJson">⬇ バックアップを保存</button>
+          <label class="btn btn-outline btn-sm">⬆ バックアップから復元<input type="file" id="importJsonInput" accept=".json" hidden /></label>
+          <button type="button" class="btn btn-outline btn-sm" data-act="load-sample">記入例を読み込む</button>
+          <button type="button" class="btn btn-ghost btn-sm danger" id="btnResetAll">すべて初期化</button>
+        </div>
+        <p class="muted small">データはこのPCのブラウザに自動保存されています。別のPCで使う場合はバックアップを保存して移してください。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== トースト ===== -->
+  <div class="toast" id="toast" hidden role="status">
+    <span id="toastMsg"></span>
+    <button type="button" class="toast-action" id="toastAction" hidden></button>
+  </div>
 
   <script src="docx-builder.js"></script>
   <script src="png-exporter.js"></script>

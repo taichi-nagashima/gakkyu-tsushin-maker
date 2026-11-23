@@ -372,7 +372,7 @@ window.HomePngExporter = (() => {
 
     // 各日データ
     const weekDates = data.weekDates || [];
-    (data.schedule || []).forEach((row, r) => {
+    (data.scheduleRows || data.schedule || []).forEach((row, r) => {
       const rowY = bodyStartY + r * dayRowH;
       const rowMidY = rowY + dayRowH / 2;
 
@@ -390,6 +390,19 @@ window.HomePngExporter = (() => {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(weekDates[r]?.dayLabel || '', colXs[1] + colWidths[1] / 2, rowMidY);
+
+      // 行事・休業日は横長の結合セルで表示
+      if (row.kind && row.kind !== 'normal') {
+        ctx.font = `700 12px ${FONT_FAMILY}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(row.spanText || '', (colXs[2] + colXs[11]) / 2, rowMidY);
+        ctx.font = `400 10.5px ${FONT_FAMILY}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        drawWrappedText(ctx, row.noteText || '', colXs[11] + 5, rowY + 3, colWidths[11] - 8, dayRowH - 4, 13);
+        return;
+      }
 
       // 1-6限
       ctx.font = `500 11px ${FONT_FAMILY}`;
@@ -417,7 +430,7 @@ window.HomePngExporter = (() => {
       ctx.font = `400 10.5px ${FONT_FAMILY}`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      drawWrappedText(ctx, row.note || '', colXs[11] + 5, rowY + 3, colWidths[11] - 8, dayRowH - 4, 13);
+      drawWrappedText(ctx, row.noteText !== undefined ? row.noteText : (row.note || ''), colXs[11] + 5, rowY + 3, colWidths[11] - 8, dayRowH - 4, 13);
     });
     ctx.restore();
 

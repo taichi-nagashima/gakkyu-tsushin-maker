@@ -1,500 +1,818 @@
 /* ==========================================================
-   HOME 学級通信メーカー - Main Application Logic
+   HOME 学級通信メーカー - Main Application (v2)
    ========================================================== */
 
 (() => {
   'use strict';
 
-  const STORAGE_KEY_STATE = 'home_newsletter_state_v1';
-  const STORAGE_KEY_DEFAULT_SCHEDULE = 'home_newsletter_default_schedule_v1';
-  const STORAGE_KEY_HISTORY = 'home_newsletter_history_v1';
-  const STORAGE_KEY_API = 'home_newsletter_gemini_api_key_v1';
-  const STORAGE_KEY_CLOUD = 'home_newsletter_cloud_session_v1';
+  // ---------- Constants ----------
+  const KEYS = {
+    state: 'home_newsletter_state_v1',
+    base: 'home_newsletter_default_schedule_v1',
+    history: 'home_newsletter_history_v1',
+    api: 'home_newsletter_gemini_api_key_v1',
+    welcome: 'home_newsletter_welcome_dismissed_v1',
+    cloud: 'home_newsletter_cloud_session_v1'
+  };
   const SUPABASE_URL = 'https://ilwspkhaystykdpwiijq.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_3I2MqHL-VQkVgsNeltZ-WQ_AigHp1KV';
-
-  const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+  const WD = ['日', '月', '火', '水', '木', '金', '土'];
   const FLAG_CYCLE = ['〇', '×', '△', '－'];
+  const APRON_GROUPS = [1, 2, 3, 4, 5, 6, 7, 8];
+  const SHEET_W = 1122;
+  const SHEET_H = 794;
 
-  // フォーマット（3年3組）の標準時間割プリセット
-  const BUILTIN_DEFAULT_SCHEDULE = [
-    { periods: ['学活', '保体', '数学', '社臼', '国語', '理永'], lunch: '〇', clean: '〇', club: '〇', note: '帰学終了予定' },
-    { periods: ['理鈴', '数学', '英語', '理永', '社臼', '国語'], lunch: '〇', clean: '×', club: '〇', note: '帰学終了予定' },
-    { periods: ['国語', '保体', '英語', '数学', '道徳', '×'], lunch: '〇', clean: '〇', club: '〇', note: '帰学終了予定' },
-    { periods: ['総合', '音楽', '社臼', '英語', '保体', '美術'], lunch: '〇', clean: '×', club: '〇', note: '帰学終了予定' },
-    { periods: ['理鈴', '数学', '技家', '社窪', '英語', '総合'], lunch: '〇', clean: '〇', club: '〇', note: '帰学終了予定' }
+  const FONT = {
+    article: { base: 13.5, min: 10.5, large: 15, normal: 13.5, small: 12, lh: 1.65 },
+    parents: { base: 12.5, min: 10, large: 13.5, normal: 12, small: 11, lh: 1.55 }
+  };
+
+  // 原本PDF（3年3組）の時間割
+  const BUILTIN_BASE = [
+    { periods: ['学活', '保体', '数学', '社臼', '国語', '理永'], lunch: '〇', clean: '〇', club: '〇', endTime: '', note: '' },
+    { periods: ['理鈴', '数学', '英語', '理永', '社臼', '国語'], lunch: '〇', clean: '×', club: '〇', endTime: '', note: '' },
+    { periods: ['国語', '保体', '英語', '数学', '道徳', '×'], lunch: '〇', clean: '〇', club: '〇', endTime: '', note: '' },
+    { periods: ['総合', '音楽', '社臼', '英語', '保体', '美術'], lunch: '〇', clean: '×', club: '〇', endTime: '', note: '' },
+    { periods: ['理鈴', '数学', '技家', '社窪', '英語', '総合'], lunch: '〇', clean: '〇', club: '〇', endTime: '', note: '' }
   ];
 
-  // ---------- Utility Functions ----------
-  function clone(obj) {
-    return JSON.parse(JSON.stringify(obj));
-  }
+  const PARENT_TEMPLATES = {
+    thanks: 'いつも学級活動への温かいご理解とご協力をありがとうございます。',
+    submit: '【提出のお願い】〇〇を〇月〇日(〇)までにご提出ください。',
+    items: '【持ち物】〇月〇日(〇)は〇〇をご用意ください。',
+    event: '【行事のお知らせ】〇月〇日(〇)に〇〇を行います。',
+    health: '朝晩の寒暖差が大きくなってきました。ご家庭でも体調管理へのご協力をお願いいたします。'
+  };
 
-  function formatDateISO(date) {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
+  // ---------- Small utils ----------
+  const $ = (id) => document.getElementById(id);
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const pad2 = (n) => String(n).padStart(2, '0');
 
-  function parseDateISO(str) {
-    if (!str) return null;
-    const parts = str.split('-').map(Number);
-    if (parts.length !== 3 || parts.some(isNaN)) return null;
-    return new Date(parts[0], parts[1] - 1, parts[2]);
+  function toISO(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+  function fromISO(s) {
+    if (!s) return null;
+    const [y, m, d] = s.split('-').map(Number);
+    if (!y || !m || !d) return null;
+    return new Date(y, m - 1, d);
   }
-
-  function getNearestFriday(baseDate = new Date()) {
-    const d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
-    const day = d.getDay(); // 0=Sun ... 5=Fri, 6=Sat
-    const diff = day <= 5 ? (5 - day) : 6; // 土曜なら翌週金曜、それ以外は今週金曜
-    d.setDate(d.getDate() + diff);
-    return d;
+  function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+  function fridayOfWeek(base) {
+    const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+    const day = d.getDay();
+    return addDays(d, day === 6 ? 6 : 5 - day); // 土曜は翌週金曜
   }
-
-  function getNextMonday(fromDate) {
-    const d = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
-    const day = d.getDay(); // 0=Sun, 1=Mon...
-    const daysToAdd = day === 0 ? 1 : (8 - day);
-    d.setDate(d.getDate() + daysToAdd);
-    return d;
+  function nextMonday(d) {
+    const day = d.getDay();
+    return addDays(d, day === 0 ? 1 : 8 - day);
   }
-
-  function formatJapaneseEraDate(isoStr) {
-    const d = parseDateISO(isoStr);
-    if (!d) return '令和8年〇〇月〇〇日(金) 発行';
-    const year = d.getFullYear();
-    const reiwa = year - 2018;
-    const eraStr = reiwa >= 1 ? `令和${reiwa === 1 ? '元' : reiwa}年` : `${year}年`;
-    const m = d.getMonth() + 1;
-    const day = d.getDate();
-    const wd = WEEKDAYS[d.getDay()];
-    return `${eraStr}${m}月${day}日(${wd}) 発行`;
+  function shortDate(d) { return `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]})`; }
+  function eraDate(iso) {
+    const d = fromISO(iso);
+    if (!d) return '令和〇年〇月〇日(〇) 発行';
+    const r = d.getFullYear() - 2018;
+    const era = r >= 1 ? `令和${r === 1 ? '元' : r}年` : `${d.getFullYear()}年`;
+    return `${era}${d.getMonth() + 1}月${d.getDate()}日(${WD[d.getDay()]}) 発行`;
   }
-
-  function getWeekDates(startIso) {
-    const start = parseDateISO(startIso);
-    if (!start) {
-      return [
-        { month: '〇〇', dayLabel: '〇〇(月)' },
-        { month: '〇〇', dayLabel: '〇〇(火)' },
-        { month: '〇〇', dayLabel: '〇〇(水)' },
-        { month: '〇〇', dayLabel: '〇〇(木)' },
-        { month: '〇〇', dayLabel: '〇〇(金)' }
-      ];
-    }
-    const list = [];
-    for (let i = 0; i < 5; i++) {
-      const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
-      list.push({
-        monthNum: cur.getMonth() + 1,
-        dayNum: cur.getDate(),
-        month: String(cur.getMonth() + 1),
-        dayLabel: `${cur.getDate()}(${WEEKDAYS[cur.getDay()]})`
-      });
-    }
-    return list;
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
   }
-
   function formatPeriodText(text) {
     const t = (text || '').trim();
-    if (!t) return '';
-    if (t.includes('\n')) return t;
+    if (!t || t.includes('\n')) return t;
     if (t.length === 2) return `${t[0]}\n${t[1]}`;
-    if (t.length === 3) return `${t.slice(0, 2)}\n${t.slice(2)}`;
-    if (t.length === 4) return `${t.slice(0, 2)}\n${t.slice(2)}`;
+    if (t.length === 3 || t.length === 4) return `${t.slice(0, 2)}\n${t.slice(2)}`;
     return t;
   }
 
-  function getSavedDefaultSchedule() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_DEFAULT_SCHEDULE);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length === 5) return parsed;
+  // ---------- 日本の祝日（自動計算） ----------
+  const holidayCache = {};
+  function nthMonday(y, m0, n) {
+    const first = new Date(y, m0, 1).getDay();
+    return 1 + ((8 - first) % 7) + 7 * (n - 1);
+  }
+  function getHolidays(y) {
+    if (holidayCache[y]) return holidayCache[y];
+    const map = new Map();
+    const key = (m, d) => `${m}-${d}`;
+    const add = (m, d, name) => map.set(key(m, d), name);
+    const k = y - 1980;
+    add(1, 1, '元日');
+    add(1, nthMonday(y, 0, 2), '成人の日');
+    add(2, 11, '建国記念の日');
+    if (y >= 2020) add(2, 23, '天皇誕生日');
+    add(3, Math.floor(20.8431 + 0.242194 * k - Math.floor(k / 4)), '春分の日');
+    add(4, 29, '昭和の日');
+    add(5, 3, '憲法記念日');
+    add(5, 4, 'みどりの日');
+    add(5, 5, 'こどもの日');
+    add(7, nthMonday(y, 6, 3), '海の日');
+    add(8, 11, '山の日');
+    add(9, nthMonday(y, 8, 3), '敬老の日');
+    add(9, Math.floor(23.2488 + 0.242194 * k - Math.floor(k / 4)), '秋分の日');
+    add(10, nthMonday(y, 9, 2), 'スポーツの日');
+    add(11, 3, '文化の日');
+    add(11, 23, '勤労感謝の日');
+
+    const baseKeys = new Set(map.keys());
+    // 振替休日
+    for (const kk of baseKeys) {
+      const [m, d] = kk.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      if (dt.getDay() === 0) {
+        let n = addDays(dt, 1);
+        while (map.has(key(n.getMonth() + 1, n.getDate()))) n = addDays(n, 1);
+        if (n.getFullYear() === y) add(n.getMonth() + 1, n.getDate(), '振替休日');
       }
-    } catch (_) {}
-    return clone(BUILTIN_DEFAULT_SCHEDULE);
+    }
+    // 国民の休日（祝日に挟まれた平日）
+    for (let dt = new Date(y, 0, 2); dt.getFullYear() === y; dt = addDays(dt, 1)) {
+      const kk = key(dt.getMonth() + 1, dt.getDate());
+      if (map.has(kk) || dt.getDay() === 0) continue;
+      const p = addDays(dt, -1);
+      const n = addDays(dt, 1);
+      if (baseKeys.has(key(p.getMonth() + 1, p.getDate())) && baseKeys.has(key(n.getMonth() + 1, n.getDate()))) {
+        add(dt.getMonth() + 1, dt.getDate(), '国民の休日');
+      }
+    }
+    holidayCache[y] = map;
+    return map;
+  }
+  function holidayName(d) {
+    return getHolidays(d.getFullYear()).get(`${d.getMonth() + 1}-${d.getDate()}`) || '';
   }
 
-  function createInitialState() {
-    const friday = getNearestFriday();
-    const nextMon = getNextMonday(friday);
+  // ---------- Week helpers ----------
+  function weekDates() {
+    const start = fromISO(state.scheduleStartDate);
+    if (!start) return null;
+    return [0, 1, 2, 3, 4].map((i) => addDays(start, i));
+  }
+  function weekRangeText() {
+    const w = weekDates();
+    if (!w) return '〇〇月〇〇日～〇〇月〇〇日';
+    return `${w[0].getMonth() + 1}月${w[0].getDate()}日～${w[4].getMonth() + 1}月${w[4].getDate()}日`;
+  }
+  function weekCells() {
+    const w = weekDates();
+    if (!w) return WD.slice(1, 6).map((wd) => ({ month: '〇〇', dayLabel: `〇〇(${wd})` }));
+    return w.map((d) => ({ month: String(d.getMonth() + 1), dayLabel: `${d.getDate()}(${WD[d.getDay()]})`, date: d }));
+  }
+  function monthSpans(cells) {
+    const spans = new Array(cells.length).fill(0);
+    let i = 0;
+    while (i < cells.length) {
+      let j = i + 1;
+      while (j < cells.length && cells[j].month === cells[i].month) j++;
+      spans[i] = j - i;
+      i = j;
+    }
+    return spans;
+  }
+  function apronText() {
+    return (state.apronGroups || []).slice().sort((a, b) => a - b).join('・');
+  }
+  function bannerText() {
+    const a = apronText();
+    return `来週の予定(${weekRangeText()})${a ? `　要エプロン持参${a}班` : ''}`;
+  }
+  function rowNoteText(row) {
+    if (row.type === 'holiday') return row.note || '';
+    const t = row.endTime ? `帰学終了予定 ${row.endTime}` : '帰学終了予定';
+    return row.note ? `${t}\n${row.note}` : t;
+  }
+
+  // ---------- State ----------
+  function normalizeBaseRow(r) {
     return {
-      logoText: 'HOME',
-      schoolName: '川崎市立野川中学校',
-      className: '３年３組 学級通信',
-      publisherName: '永嶋 裕太',
-      issueNumber: 1,
-      issueDate: formatDateISO(friday),
-      articleTitle: '',
-      articleBody: '',
-      articleFontSize: '13.5',
-      photoCornerTitle: 'フォトコーナー',
-      photos: [], // { id, dataUrl, caption }
-      parentsNote: '',
-      parentsFontSize: '12',
-      scheduleStartDate: formatDateISO(nextMon),
-      apronGroups: '1・2・3',
-      schedule: getSavedDefaultSchedule()
+      periods: Array.from({ length: 6 }, (_, i) => (r.periods && r.periods[i]) || ''),
+      lunch: r.lunch ?? '〇',
+      clean: r.clean ?? '〇',
+      club: r.club ?? '〇',
+      endTime: r.endTime || '',
+      note: r.note === '帰学終了予定' ? '' : (r.note || '')
+    };
+  }
+  function getBase() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(KEYS.base) || 'null');
+      if (Array.isArray(saved) && saved.length === 5) return saved.map(normalizeBaseRow);
+    } catch (_) { /* ignore */ }
+    return clone(BUILTIN_BASE);
+  }
+  function rowFromBase(b) {
+    return { type: 'normal', eventText: '', autoHoliday: false, ...normalizeBaseRow(b) };
+  }
+  function normalizeRow(r) {
+    return {
+      ...rowFromBase(r),
+      type: ['normal', 'event', 'holiday'].includes(r.type) ? r.type : 'normal',
+      eventText: r.eventText || '',
+      autoHoliday: !!r.autoHoliday
     };
   }
 
+  function initialState() {
+    const fri = fridayOfWeek(new Date());
+    return {
+      logoText: 'HOME',
+      schoolName: '川崎市立野川中学校',
+      className: '3年3組 学級通信',
+      publisherName: '永嶋　裕太',
+      issueNumber: 1,
+      issueDate: toISO(fri),
+      articleTitle: '',
+      articleBody: '',
+      articleFontMode: 'auto',
+      photoCornerTitle: 'フォトコーナー',
+      photos: [],
+      parentsNote: '',
+      parentsFontMode: 'auto',
+      scheduleStartDate: toISO(nextMonday(fri)),
+      apronGroups: [1, 2, 3],
+      schedule: getBase().map(rowFromBase),
+      ai: { articleMemo: '', parentsMemo: '', tone: 'warm', length: 'medium' }
+    };
+  }
+
+  function migrate(saved) {
+    const s = { ...initialState(), ...saved };
+    if (typeof s.apronGroups === 'string') {
+      s.apronGroups = s.apronGroups.split(/[・,、\s]+/).map(Number).filter((n) => APRON_GROUPS.includes(n));
+    }
+    if (!Array.isArray(s.apronGroups)) s.apronGroups = [];
+    if (!['auto', 'large', 'normal', 'small'].includes(s.articleFontMode)) s.articleFontMode = 'auto';
+    if (!['auto', 'large', 'normal', 'small'].includes(s.parentsFontMode)) s.parentsFontMode = 'auto';
+    s.photos = Array.isArray(s.photos) ? s.photos.slice(0, 4) : [];
+    s.schedule = Array.isArray(s.schedule) && s.schedule.length === 5 ? s.schedule.map(normalizeRow) : getBase().map(rowFromBase);
+    s.ai = { ...initialState().ai, ...(s.ai || {}) };
+    s.issueNumber = parseInt(s.issueNumber, 10) || 1;
+    delete s.articleFontSize;
+    delete s.parentsFontSize;
+    return s;
+  }
+
   function loadState() {
-    const fallback = createInitialState();
     try {
-      const raw = localStorage.getItem(STORAGE_KEY_STATE);
-      if (!raw) return fallback;
-      const saved = JSON.parse(raw);
-      return {
-        ...fallback,
-        ...saved,
-        photos: Array.isArray(saved.photos) ? saved.photos : [],
-        schedule: Array.isArray(saved.schedule) && saved.schedule.length === 5
-          ? saved.schedule
-          : fallback.schedule
-      };
+      const raw = localStorage.getItem(KEYS.state);
+      return raw ? migrate(JSON.parse(raw)) : null;
     } catch (_) {
-      return fallback;
+      return null;
     }
   }
 
-  let state = loadState();
-  let zoomMode = 'fit'; // 'fit' or number
-  let manualZoom = 0.85;
+  const loaded = loadState();
+  const isFirstRun = !loaded;
+  let state = loaded || initialState();
 
-  function saveState() {
+  // ---------- Save (debounced) ----------
+  let saveTimer = null;
+  function saveNow() {
     try {
-      localStorage.setItem(STORAGE_KEY_STATE, JSON.stringify(state));
+      localStorage.setItem(KEYS.state, JSON.stringify(state));
+      const now = new Date();
+      els.saveStatus.textContent = `✓ 自動保存済み ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+      els.saveStatus.classList.remove('saving');
     } catch (err) {
-      console.warn('localStorage save failed (maybe quota exceeded):', err);
-      showToast('保存容量の上限に近づいています。写真の枚数や履歴を整理してください。', true);
+      console.warn(err);
+      els.saveStatus.textContent = '⚠ 保存できません（容量不足）';
+      showToast('ブラウザの保存容量が不足しています。写真の枚数や保存した号を減らしてください。', { error: true });
+    }
+  }
+  function scheduleSave() {
+    els.saveStatus.textContent = '保存中…';
+    els.saveStatus.classList.add('saving');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveNow, 400);
+  }
+
+  let renderQueued = false;
+  function commit() {
+    scheduleSave();
+    if (!renderQueued) {
+      renderQueued = true;
+      requestAnimationFrame(() => {
+        renderQueued = false;
+        render();
+      });
     }
   }
 
   // ---------- Toast ----------
   let toastTimer = null;
-  function showToast(msg, isError = false) {
-    const el = document.getElementById('toast');
-    el.textContent = msg;
-    el.style.background = isError ? '#b91c1c' : '#0f172a';
-    el.classList.remove('hidden');
+  function showToast(msg, { error = false, actionLabel = '', onAction = null, ms = 3200 } = {}) {
+    els.toastMsg.textContent = msg;
+    els.toast.classList.toggle('error', error);
+    els.toastAction.hidden = !actionLabel;
+    els.toastAction.textContent = actionLabel;
+    els.toastAction.onclick = () => {
+      els.toast.hidden = true;
+      if (onAction) onAction();
+    };
+    els.toast.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.add('hidden'), 3200);
+    toastTimer = setTimeout(() => { els.toast.hidden = true; }, actionLabel ? Math.max(ms, 7000) : ms);
   }
 
-  // ---------- DOM References ----------
+  // ---------- DOM refs ----------
   const els = {
-    issueNumber: document.getElementById('issueNumber'),
-    issueDate: document.getElementById('issueDate'),
-    issueDateDisplay: document.getElementById('issueDateDisplay'),
-    articleTitle: document.getElementById('articleTitle'),
-    articleBody: document.getElementById('articleBody'),
-    articleFontSize: document.getElementById('articleFontSize'),
-    articleCharCount: document.getElementById('articleCharCount'),
-    parentsNote: document.getElementById('parentsNote'),
-    parentsFontSize: document.getElementById('parentsFontSize'),
-    parentsCharCount: document.getElementById('parentsCharCount'),
-    logoText: document.getElementById('logoText'),
-    schoolName: document.getElementById('schoolName'),
-    className: document.getElementById('className'),
-    publisherName: document.getElementById('publisherName'),
-    photoCornerTitle: document.getElementById('photoCornerTitle'),
-    photoDropzone: document.getElementById('photoDropzone'),
-    photoInput: document.getElementById('photoInput'),
-    photoList: document.getElementById('photoList'),
-    scheduleStartDate: document.getElementById('scheduleStartDate'),
-    apronGroups: document.getElementById('apronGroups'),
-    scheduleEditorList: document.getElementById('scheduleEditorList'),
-    // AI
-    aiArticleMemo: document.getElementById('aiArticleMemo'),
-    aiParentsMemo: document.getElementById('aiParentsMemo'),
-    aiTone: document.getElementById('aiTone'),
-    aiLength: document.getElementById('aiLength'),
-    geminiApiKey: document.getElementById('geminiApiKey'),
-    aiStatus: document.getElementById('aiStatus'),
-    aiPasteResult: document.getElementById('aiPasteResult'),
-    // Preview
-    previewViewport: document.getElementById('previewViewport'),
-    sheetWrapper: document.getElementById('sheetWrapper'),
-    zoomLabel: document.getElementById('zoomLabel'),
-    pvLogoText: document.getElementById('pvLogoText'),
-    pvSchoolName: document.getElementById('pvSchoolName'),
-    pvClassIssue: document.getElementById('pvClassIssue'),
-    pvPublisher: document.getElementById('pvPublisher'),
-    pvIssueDate: document.getElementById('pvIssueDate'),
-    pvArticleTitle: document.getElementById('pvArticleTitle'),
-    pvArticleBody: document.getElementById('pvArticleBody'),
-    pvPhotoTitle: document.getElementById('pvPhotoTitle'),
-    pvPhotoGrid: document.getElementById('pvPhotoGrid'),
-    pvParentsBody: document.getElementById('pvParentsBody'),
-    pvScheduleBanner: document.getElementById('pvScheduleBanner'),
-    pvScheduleBody: document.getElementById('pvScheduleBody'),
-    // Modal
-    historyModal: document.getElementById('historyModal'),
-    historyList: document.getElementById('historyList')
+    saveStatus: $('saveStatus'),
+    docChipNum: $('docChipNum'),
+    docChipDate: $('docChipDate'),
+    stepper: $('stepper'),
+    editorScroll: $('editorScroll'),
+    welcome: $('welcomeBanner'),
+    issueDate: $('issueDate'),
+    issueDateEra: $('issueDateEra'),
+    issueWeekRange: $('issueWeekRange'),
+    fitArticle: $('fitArticle'),
+    fitParents: $('fitParents'),
+    articleCount: $('articleCount'),
+    parentsCount: $('parentsCount'),
+    aiPanel: $('aiPanel'),
+    btnToggleAi: $('btnToggleAi'),
+    aiModeApi: $('aiModeApi'),
+    aiModeManual: $('aiModeManual'),
+    aiStatus: $('aiStatus'),
+    aiPasteBox: $('aiPasteBox'),
+    photoEditor: $('photoEditor'),
+    photoInput: $('photoInput'),
+    scheduleStartDate: $('scheduleStartDate'),
+    weekRangeBox: $('weekRangeBox'),
+    apronChips: $('apronChips'),
+    scheduleEditor: $('scheduleEditor'),
+    btnChecks: $('btnChecks'),
+    btnZoomToggle: $('btnZoomToggle'),
+    previewViewport: $('previewViewport'),
+    sheetWrapper: $('sheetWrapper'),
+    sheet: $('newsletterSheet'),
+    pvLogoText: $('pvLogoText'),
+    pvSchoolName: $('pvSchoolName'),
+    pvClassIssue: $('pvClassIssue'),
+    pvPublisher: $('pvPublisher'),
+    pvIssueDate: $('pvIssueDate'),
+    pvArticleTitle: $('pvArticleTitle'),
+    pvArticleBody: $('pvArticleBody'),
+    ovArticle: $('ovArticle'),
+    pvPhotoBox: $('pvPhotoBox'),
+    pvPhotoTitle: $('pvPhotoTitle'),
+    pvPhotoGrid: $('pvPhotoGrid'),
+    pvParentsBody: $('pvParentsBody'),
+    ovParents: $('ovParents'),
+    pvScheduleBanner: $('pvScheduleBanner'),
+    pvScheduleBody: $('pvScheduleBody'),
+    exportModal: $('exportModal'),
+    exportIssueLabel: $('exportIssueLabel'),
+    checkList: $('checkList'),
+    issueModal: $('issueModal'),
+    nextIssueDesc: $('nextIssueDesc'),
+    historyList: $('historyList'),
+    settingsModal: $('settingsModal'),
+    geminiApiKey: $('geminiApiKey'),
+    toast: $('toast'),
+    toastMsg: $('toastMsg'),
+    toastAction: $('toastAction')
   };
 
-  // ---------- Render Editor Fields from State ----------
-  function syncInputsFromState() {
-    els.issueNumber.value = state.issueNumber;
-    els.issueDate.value = state.issueDate;
-    els.articleTitle.value = state.articleTitle;
-    els.articleBody.value = state.articleBody;
-    els.articleFontSize.value = state.articleFontSize;
-    els.parentsNote.value = state.parentsNote;
-    els.parentsFontSize.value = state.parentsFontSize;
-    els.logoText.value = state.logoText;
-    els.schoolName.value = state.schoolName;
-    els.className.value = state.className;
-    els.publisherName.value = state.publisherName;
-    els.photoCornerTitle.value = state.photoCornerTitle;
-    els.scheduleStartDate.value = state.scheduleStartDate;
-    els.apronGroups.value = state.apronGroups;
+  // ---------- Fit (auto font size) ----------
+  const fitResult = { article: { size: FONT.article.base, overflowLines: 0 }, parents: { size: FONT.parents.base, overflowLines: 0 } };
 
-    renderPhotoEditorList();
-    renderScheduleEditor();
-  }
-
-  // ---------- Render Live A4 Preview ----------
-  function computeScheduleBannerText() {
-    const week = getWeekDates(state.scheduleStartDate);
-    let rangeStr = '〇〇月〇〇日～〇〇月〇〇日';
-    if (week[0].monthNum && week[4].monthNum) {
-      rangeStr = `${week[0].monthNum}月${week[0].dayNum}日～${week[4].monthNum}月${week[4].dayNum}日`;
+  function fitText(el, cfg, mode) {
+    const overflowPx = () => el.scrollHeight - el.clientHeight;
+    let size;
+    if (mode === 'auto') {
+      size = cfg.base;
+      el.style.fontSize = `${size}px`;
+      while (overflowPx() > 1 && size > cfg.min) {
+        size = Math.round((size - 0.5) * 10) / 10;
+        el.style.fontSize = `${size}px`;
+      }
+    } else {
+      size = cfg[mode];
+      el.style.fontSize = `${size}px`;
     }
-    const apron = (state.apronGroups || '').trim();
-    const apronPart = apron ? `　要エプロン持参${apron}班` : '';
-    return `来週の予定(${rangeStr})${apronPart}`;
+    const over = overflowPx();
+    return { size, overflowLines: over > 1 ? Math.ceil(over / (size * cfg.lh)) : 0 };
   }
 
-  function renderPreview() {
-    const dateStr = formatJapaneseEraDate(state.issueDate);
-    els.issueDateDisplay.textContent = dateStr;
+  // ---------- Render ----------
+  function render() {
+    const s = state;
 
-    els.pvLogoText.textContent = state.logoText || 'HOME';
-    els.pvSchoolName.textContent = state.schoolName || '';
-    els.pvClassIssue.textContent = `${state.className || ''} 第${state.issueNumber || '〇'}号`;
-    els.pvPublisher.textContent = `発行者 ${state.publisherName || ''}`;
-    els.pvIssueDate.textContent = dateStr;
+    // top bar
+    const issueD = fromISO(s.issueDate);
+    els.docChipNum.textContent = `第${s.issueNumber}号`;
+    els.docChipDate.textContent = issueD ? `${shortDate(issueD)} 発行` : '発行日未設定';
 
-    els.pvArticleTitle.textContent = state.articleTitle || 'タイトル';
-    els.pvArticleBody.textContent = state.articleBody || '';
-    els.pvArticleBody.style.fontSize = `${state.articleFontSize}px`;
-    els.articleCharCount.textContent = `${(state.articleBody || '').length}文字`;
+    // section 1 derived
+    els.issueDateEra.textContent = eraDate(s.issueDate);
+    els.issueWeekRange.textContent = weekRangeText();
+    els.weekRangeBox.textContent = weekRangeText().replace('～', ' ～ ');
 
-    els.pvPhotoTitle.textContent = state.photoCornerTitle || 'フォトコーナー';
+    // header
+    els.pvLogoText.textContent = s.logoText || 'HOME';
+    els.pvSchoolName.textContent = s.schoolName || '';
+    els.pvClassIssue.textContent = `${s.className || ''} 第${s.issueNumber || '〇'}号`;
+    els.pvPublisher.textContent = `発行者 ${s.publisherName || ''}`;
+    els.pvIssueDate.textContent = eraDate(s.issueDate);
+
+    // article
+    els.pvArticleTitle.textContent = s.articleTitle || 'タイトル';
+    els.pvArticleTitle.classList.toggle('is-placeholder', !s.articleTitle);
+    els.pvArticleBody.textContent = s.articleBody || '';
+    els.articleCount.textContent = `${(s.articleBody || '').length}文字`;
+
+    // photos
+    els.pvPhotoTitle.textContent = s.photoCornerTitle || 'フォトコーナー';
     renderPreviewPhotos();
 
-    els.pvParentsBody.textContent = state.parentsNote || '';
-    els.pvParentsBody.style.fontSize = `${state.parentsFontSize}px`;
-    els.parentsCharCount.textContent = `${(state.parentsNote || '').length}文字`;
+    // parents
+    els.pvParentsBody.textContent = s.parentsNote || '';
+    els.parentsCount.textContent = `${(s.parentsNote || '').length}文字`;
 
-    els.pvScheduleBanner.textContent = computeScheduleBannerText();
+    // schedule
+    els.pvScheduleBanner.textContent = bannerText();
     renderPreviewSchedule();
+
+    // fit
+    fitResult.article = fitText(els.pvArticleBody, FONT.article, s.articleFontMode);
+    fitResult.parents = fitText(els.pvParentsBody, FONT.parents, s.parentsFontMode);
+    updateFitUi(els.fitArticle, els.ovArticle, els.pvArticleBody, fitResult.article, s.articleBody);
+    updateFitUi(els.fitParents, els.ovParents, els.pvParentsBody, fitResult.parents, s.parentsNote);
+
+    updateStepper();
+    updateChecksPill();
+  }
+
+  function updateFitUi(chip, badge, bodyEl, res, text) {
+    if (!text) {
+      chip.textContent = '';
+      chip.className = 'fit-chip';
+    } else if (res.overflowLines > 0) {
+      chip.textContent = `⚠ 約${res.overflowLines}行はみ出し`;
+      chip.className = 'fit-chip warn';
+    } else {
+      chip.textContent = `✓ 枠内に収まっています（${res.size}pt相当）`;
+      chip.className = 'fit-chip ok';
+    }
+    badge.hidden = !(text && res.overflowLines > 0);
+    bodyEl.classList.toggle('is-overflow', !!(text && res.overflowLines > 0));
   }
 
   function renderPreviewPhotos() {
     const grid = els.pvPhotoGrid;
     grid.innerHTML = '';
-    const count = state.photos.length;
-    grid.className = `photo-grid count-${count}`;
-
-    if (count === 0) {
+    const n = state.photos.length;
+    grid.className = `photo-grid count-${n}`;
+    if (n === 0) {
       const hint = document.createElement('div');
-      hint.className = 'photo-empty-hint no-print-placeholder';
-      hint.textContent = '左の「📷 写真」タブから写真を追加できます';
+      hint.className = 'photo-empty-hint';
+      hint.textContent = 'クリックまたは写真をドロップして追加';
       grid.appendChild(hint);
       return;
     }
-
-    state.photos.forEach((photo) => {
+    state.photos.forEach((p) => {
       const card = document.createElement('div');
       card.className = 'pv-photo-card';
       const img = document.createElement('img');
-      img.src = photo.dataUrl;
-      img.alt = photo.caption || 'フォトコーナー写真';
+      img.src = p.dataUrl;
+      img.alt = p.caption || '写真';
       card.appendChild(img);
-
-      if (photo.caption && photo.caption.trim()) {
+      if (p.caption && p.caption.trim()) {
         const cap = document.createElement('div');
         cap.className = 'pv-photo-caption';
-        cap.textContent = photo.caption.trim();
+        cap.textContent = p.caption.trim();
         card.appendChild(cap);
       }
       grid.appendChild(card);
     });
   }
 
-  function getMonthSpans(weekDates) {
-    // 月列の縦結合（同じ月が連続すればまとめる）
-    const spans = new Array(weekDates.length).fill(0);
-    let i = 0;
-    while (i < weekDates.length) {
-      let j = i + 1;
-      while (j < weekDates.length && weekDates[j].month === weekDates[i].month) {
-        j++;
-      }
-      spans[i] = j - i;
-      i = j;
-    }
-    return spans;
-  }
-
   function renderPreviewSchedule() {
     const tbody = els.pvScheduleBody;
     tbody.innerHTML = '';
-    const weekDates = getWeekDates(state.scheduleStartDate);
-    const spans = getMonthSpans(weekDates);
-
-    state.schedule.forEach((row, idx) => {
+    const cells = weekCells();
+    const spans = monthSpans(cells);
+    const td = (cls, text, attrs = {}) => {
+      const el = document.createElement('td');
+      el.className = cls;
+      el.textContent = text;
+      Object.entries(attrs).forEach(([k, v]) => { el[k] = v; });
+      return el;
+    };
+    state.schedule.forEach((row, i) => {
       const tr = document.createElement('tr');
-
-      if (spans[idx] > 0) {
-        const tdMonth = document.createElement('td');
-        tdMonth.className = 'cell-month';
-        tdMonth.rowSpan = spans[idx];
-        tdMonth.textContent = weekDates[idx].month;
-        tr.appendChild(tdMonth);
+      if (spans[i] > 0) tr.appendChild(td('cell-month', cells[i].month, { rowSpan: spans[i] }));
+      tr.appendChild(td('cell-day', cells[i].dayLabel));
+      if (row.type === 'holiday') {
+        tr.appendChild(td('cell-span holiday', row.eventText || '休み', { colSpan: 9 }));
+      } else {
+        if (row.type === 'event') {
+          tr.appendChild(td('cell-span', row.eventText || '行事', { colSpan: 6 }));
+        } else {
+          row.periods.forEach((p) => tr.appendChild(td('cell-period', formatPeriodText(p))));
+        }
+        ['lunch', 'clean', 'club'].forEach((k) => tr.appendChild(td('cell-flag', row[k] || '')));
       }
-
-      const tdDay = document.createElement('td');
-      tdDay.className = 'cell-day';
-      tdDay.textContent = weekDates[idx].dayLabel;
-      tr.appendChild(tdDay);
-
-      for (let p = 0; p < 6; p++) {
-        const tdP = document.createElement('td');
-        tdP.className = 'cell-period';
-        tdP.textContent = formatPeriodText(row.periods[p]);
-        tr.appendChild(tdP);
-      }
-
-      ['lunch', 'clean', 'club'].forEach((key) => {
-        const tdF = document.createElement('td');
-        tdF.className = 'cell-flag';
-        tdF.textContent = row[key] || '';
-        tr.appendChild(tdF);
-      });
-
-      const tdNote = document.createElement('td');
-      tdNote.className = 'cell-note';
-      tdNote.textContent = row.note || '';
-      tr.appendChild(tdNote);
-
+      tr.appendChild(td('cell-note', rowNoteText(row)));
       tbody.appendChild(tr);
     });
   }
 
-  // ---------- Schedule Editor UI ----------
-  function renderScheduleEditor() {
-    const container = els.scheduleEditorList;
-    container.innerHTML = '';
-    const weekDates = getWeekDates(state.scheduleStartDate);
-
-    state.schedule.forEach((row, dayIdx) => {
-      const card = document.createElement('div');
-      card.className = 'day-editor-card';
-
-      const top = document.createElement('div');
-      top.className = 'day-editor-top';
-
-      const label = document.createElement('span');
-      label.className = 'day-label-badge';
-      label.textContent = `${weekDates[dayIdx].month}月${weekDates[dayIdx].dayLabel}`;
-      top.appendChild(label);
-
-      const flagsWrap = document.createElement('div');
-      flagsWrap.className = 'day-flags';
-
-      [
-        { key: 'lunch', name: '給' },
-        { key: 'clean', name: '清' },
-        { key: 'club', name: '部' }
-      ].forEach(({ key, name }) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = `flag-toggle ${row[key] === '×' ? 'is-cross' : ''}`;
-        btn.innerHTML = `${name}<span class="flag-val">${row[key]}</span>`;
-        btn.addEventListener('click', () => {
-          const curIdx = FLAG_CYCLE.indexOf(row[key]);
-          row[key] = FLAG_CYCLE[(curIdx + 1) % FLAG_CYCLE.length];
-          btn.classList.toggle('is-cross', row[key] === '×');
-          btn.querySelector('.flag-val').textContent = row[key];
-          saveState();
-          renderPreview();
-        });
-        flagsWrap.appendChild(btn);
-      });
-      top.appendChild(flagsWrap);
-      card.appendChild(top);
-
-      // 1-6限入力
-      const pGrid = document.createElement('div');
-      pGrid.className = 'periods-grid';
-      for (let p = 0; p < 6; p++) {
-        const wrap = document.createElement('div');
-        wrap.className = 'period-input-wrap';
-        const num = document.createElement('span');
-        num.textContent = `${p + 1}限`;
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.maxLength = 6;
-        input.value = row.periods[p] || '';
-        input.addEventListener('input', (e) => {
-          row.periods[p] = e.target.value;
-          saveState();
-          renderPreview();
-        });
-        wrap.appendChild(num);
-        wrap.appendChild(input);
-        pGrid.appendChild(wrap);
-      }
-      card.appendChild(pGrid);
-
-      // 備考入力
-      const noteInput = document.createElement('input');
-      noteInput.type = 'text';
-      noteInput.className = 'day-note-input';
-      noteInput.placeholder = '備考（例：帰学終了予定 16:15）';
-      noteInput.value = row.note || '';
-      noteInput.addEventListener('input', (e) => {
-        row.note = e.target.value;
-        saveState();
-        renderPreview();
-      });
-      card.appendChild(noteInput);
-
-      container.appendChild(card);
+  // ---------- Stepper / checks ----------
+  function stepStatus() {
+    const s = state;
+    return {
+      'sec-issue': s.issueNumber && s.issueDate ? 'done' : '',
+      'sec-article': fitResult.article.overflowLines > 0 && s.articleBody ? 'warn' : (s.articleTitle && s.articleBody ? 'done' : ''),
+      'sec-photos': s.photos.length > 0 ? 'done' : '',
+      'sec-parents': fitResult.parents.overflowLines > 0 && s.parentsNote ? 'warn' : (s.parentsNote ? 'done' : ''),
+      'sec-schedule': s.scheduleStartDate ? 'done' : ''
+    };
+  }
+  function updateStepper() {
+    const st = stepStatus();
+    els.stepper.querySelectorAll('.step').forEach((b, idx) => {
+      const v = st[b.dataset.target];
+      b.classList.toggle('is-done', v === 'done');
+      b.classList.toggle('is-warn', v === 'warn');
+      b.querySelector('.step-dot').textContent = v === 'done' ? '✓' : v === 'warn' ? '!' : String(idx + 1);
     });
   }
 
-  // ---------- Photo Management ----------
-  function resizeImageFile(file) {
+  const PLACEHOLDER_RE = /〇〇|〇月|〇日|\(〇\)/;
+  function collectChecks() {
+    const s = state;
+    const list = [];
+    if (!s.articleTitle.trim()) list.push({ level: 'warn', text: 'タイトルが未入力です', target: 'sec-article', focus: 'articleTitle' });
+    if (!s.articleBody.trim()) list.push({ level: 'warn', text: '記事の本文が未入力です', target: 'sec-article', focus: 'articleBody' });
+    if (s.articleBody && fitResult.article.overflowLines > 0) list.push({ level: 'warn', text: `記事の本文が約${fitResult.article.overflowLines}行はみ出しています`, target: 'sec-article', focus: 'articleBody' });
+    if (s.parentsNote && fitResult.parents.overflowLines > 0) list.push({ level: 'warn', text: `「保護者の皆様へ」が約${fitResult.parents.overflowLines}行はみ出しています`, target: 'sec-parents', focus: 'parentsNote' });
+    const texts = [s.articleTitle, s.articleBody, s.parentsNote, ...s.schedule.map((r) => `${r.eventText} ${r.note}`)];
+    if (texts.some((t) => PLACEHOLDER_RE.test(t || ''))) list.push({ level: 'warn', text: '「〇〇」「〇月〇日」など、埋めていない部分があります', target: 'sec-parents' });
+    if (!s.parentsNote.trim()) list.push({ level: 'info', text: '「保護者の皆様へ」が空欄です（空欄のままでも書き出せます）', target: 'sec-parents', focus: 'parentsNote' });
+    if (s.photos.length === 0) list.push({ level: 'info', text: '写真がありません（写真なしでも書き出せます）', target: 'sec-photos' });
+    return list;
+  }
+  function updateChecksPill() {
+    const warns = collectChecks().filter((c) => c.level === 'warn').length;
+    els.btnChecks.textContent = warns ? `⚠ 確認事項 ${warns}件` : '✓ 書き出しOK';
+    els.btnChecks.className = `check-pill ${warns ? 'warn' : 'ok'}`;
+  }
+
+  function goToSection(id, focusId) {
+    const sec = $(id);
+    if (!sec) return;
+    sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    sec.classList.remove('flash');
+    void sec.offsetWidth;
+    sec.classList.add('flash');
+    setTimeout(() => sec.classList.remove('flash'), 1200);
+    if (focusId) setTimeout(() => { const f = $(focusId); if (f) f.focus({ preventScroll: true }); }, 350);
+  }
+
+  function updateActiveStep() {
+    const top = els.editorScroll.getBoundingClientRect().top;
+    let active = 'sec-issue';
+    els.stepper.querySelectorAll('.step').forEach((b) => {
+      const sec = $(b.dataset.target);
+      if (sec && sec.getBoundingClientRect().top - top < 120) active = b.dataset.target;
+    });
+    const sc = els.editorScroll;
+    if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 4) active = 'sec-schedule';
+    els.stepper.querySelectorAll('.step').forEach((b) => b.classList.toggle('is-active', b.dataset.target === active));
+  }
+
+  // ---------- Bindings (data-bind) ----------
+  function syncInputs() {
+    document.querySelectorAll('[data-bind]').forEach((el) => {
+      const v = state[el.dataset.bind];
+      el.value = v ?? '';
+    });
+    document.querySelectorAll('[data-bind-ai]').forEach((el) => {
+      el.value = state.ai[el.dataset.bindAi] || '';
+    });
+    document.querySelectorAll('.seg').forEach((seg) => {
+      const v = state.ai[seg.dataset.seg];
+      seg.querySelectorAll('button').forEach((b) => b.classList.toggle('is-on', b.dataset.val === v));
+    });
+    els.issueDate.value = state.issueDate;
+    els.scheduleStartDate.value = state.scheduleStartDate;
+    renderPhotoEditor();
+    renderApronChips();
+    renderScheduleEditor();
+    updateAiMode();
+  }
+
+  function bindDataInputs() {
+    document.querySelectorAll('[data-bind]').forEach((el) => {
+      const evt = el.tagName === 'SELECT' ? 'change' : 'input';
+      el.addEventListener(evt, () => {
+        const key = el.dataset.bind;
+        state[key] = el.type === 'number' ? Math.max(1, parseInt(el.value, 10) || 1) : el.value;
+        commit();
+      });
+    });
+    document.querySelectorAll('[data-bind-ai]').forEach((el) => {
+      el.addEventListener('input', () => {
+        state.ai[el.dataset.bindAi] = el.value;
+        scheduleSave();
+      });
+    });
+    document.querySelectorAll('.seg').forEach((seg) => {
+      seg.addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        state.ai[seg.dataset.seg] = b.dataset.val;
+        seg.querySelectorAll('button').forEach((x) => x.classList.toggle('is-on', x === b));
+        scheduleSave();
+      });
+    });
+  }
+
+  // ---------- Dates ----------
+  function setIssueDate(iso) {
+    state.issueDate = iso;
+    const d = fromISO(iso);
+    if (d) setScheduleStart(toISO(nextMonday(d)), false);
+    els.issueDate.value = iso;
+    commit();
+  }
+  function setScheduleStart(iso, doCommit = true) {
+    state.scheduleStartDate = iso;
+    els.scheduleStartDate.value = iso;
+    applyAutoHolidays();
+    renderScheduleEditor();
+    if (doCommit) commit();
+  }
+  function applyAutoHolidays() {
+    const w = weekDates();
+    if (!w) return;
+    state.schedule.forEach((row, i) => {
+      const name = holidayName(w[i]);
+      if (name) {
+        if (row.type === 'normal' || row.autoHoliday) {
+          row.type = 'holiday';
+          row.eventText = name;
+          row.autoHoliday = true;
+        }
+      } else if (row.autoHoliday) {
+        row.type = 'normal';
+        row.eventText = '';
+        row.autoHoliday = false;
+      }
+    });
+  }
+
+  // ---------- Schedule editor ----------
+  function renderApronChips() {
+    els.apronChips.innerHTML = '';
+    APRON_GROUPS.forEach((g) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `apron-chip ${state.apronGroups.includes(g) ? 'is-on' : ''}`;
+      b.textContent = `${g}班`;
+      b.addEventListener('click', () => {
+        const set = new Set(state.apronGroups);
+        if (set.has(g)) set.delete(g); else set.add(g);
+        state.apronGroups = [...set].sort((a, b2) => a - b2);
+        b.classList.toggle('is-on', set.has(g));
+        commit();
+      });
+      els.apronChips.appendChild(b);
+    });
+  }
+
+  function renderScheduleEditor() {
+    const box = els.scheduleEditor;
+    box.innerHTML = '';
+    const head = document.createElement('div');
+    head.className = 'sch-headrow';
+    head.innerHTML = '<span>日付</span><span>種類</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>給</span><span>清</span><span>部</span>';
+    box.appendChild(head);
+
+    const cells = weekCells();
+    state.schedule.forEach((row, i) => {
+      const day = document.createElement('div');
+      day.className = `sch-day ${row.type === 'holiday' ? 'is-holiday' : ''} ${row.type === 'event' ? 'is-event' : ''}`;
+
+      const l1 = document.createElement('div');
+      l1.className = 'sch-line1';
+
+      const date = document.createElement('div');
+      date.className = 'sch-date';
+      const d = cells[i].date;
+      date.innerHTML = d ? `<b>${d.getMonth() + 1}/${d.getDate()}</b><span>${WD[d.getDay()]}</span>` : `<b>--</b><span>${WD[i + 1]}</span>`;
+      l1.appendChild(date);
+
+      const sel = document.createElement('select');
+      sel.className = 'sch-type';
+      sel.setAttribute('aria-label', '日の種類');
+      sel.innerHTML = '<option value="normal">通常</option><option value="event">行事</option><option value="holiday">休み</option>';
+      sel.value = row.type;
+      sel.addEventListener('change', () => {
+        row.type = sel.value;
+        row.autoHoliday = false;
+        if (row.type === 'normal') row.eventText = '';
+        renderScheduleEditor();
+        commit();
+        if (row.type !== 'normal') {
+          const inp = box.querySelectorAll('.sch-day')[i].querySelector('.sch-wide, .sch-wide-all');
+          if (inp) inp.focus();
+        }
+      });
+      l1.appendChild(sel);
+
+      if (row.type === 'normal') {
+        row.periods.forEach((p, pi) => {
+          const inp = document.createElement('input');
+          inp.type = 'text';
+          inp.value = p;
+          inp.maxLength = 6;
+          inp.setAttribute('aria-label', `${pi + 1}限`);
+          inp.addEventListener('input', () => { row.periods[pi] = inp.value; commit(); });
+          l1.appendChild(inp);
+        });
+      } else {
+        const wide = document.createElement('input');
+        wide.type = 'text';
+        wide.className = row.type === 'holiday' ? 'sch-wide-all' : 'sch-wide';
+        wide.placeholder = row.type === 'holiday' ? '例）勤労感謝の日・振替休業日' : '例）合唱コンクール・校外学習';
+        wide.value = row.eventText;
+        wide.addEventListener('input', () => { row.eventText = wide.value; row.autoHoliday = false; commit(); });
+        l1.appendChild(wide);
+      }
+
+      if (row.type !== 'holiday') {
+        ['lunch', 'clean', 'club'].forEach((k) => {
+          const fb = document.createElement('button');
+          fb.type = 'button';
+          fb.className = `flag-btn ${row[k] === '×' ? 'is-x' : ''}`;
+          fb.textContent = row[k] || '　';
+          fb.title = { lunch: '給食', clean: '清掃', club: '部活動' }[k];
+          fb.addEventListener('click', () => {
+            row[k] = FLAG_CYCLE[(FLAG_CYCLE.indexOf(row[k]) + 1) % FLAG_CYCLE.length];
+            fb.textContent = row[k];
+            fb.classList.toggle('is-x', row[k] === '×');
+            commit();
+          });
+          l1.appendChild(fb);
+        });
+      }
+      day.appendChild(l1);
+
+      const l2 = document.createElement('div');
+      l2.className = 'sch-line2';
+      if (row.type === 'holiday') {
+        l2.innerHTML = `<span></span><span class="sch-auto">${row.autoHoliday ? '🎌 祝日を自動で反映' : ''}</span>`;
+        const note = document.createElement('input');
+        note.type = 'text';
+        note.placeholder = '備考（任意）';
+        note.value = row.note;
+        note.addEventListener('input', () => { row.note = note.value; commit(); });
+        l2.appendChild(note);
+      } else {
+        const lab = document.createElement('label');
+        lab.textContent = '帰学';
+        const time = document.createElement('input');
+        time.type = 'time';
+        time.value = row.endTime;
+        time.title = '帰学終了予定の時刻';
+        time.addEventListener('input', () => { row.endTime = time.value; commit(); });
+        const note = document.createElement('input');
+        note.type = 'text';
+        note.placeholder = '備考（任意）例）6限 学年集会';
+        note.value = row.note;
+        note.addEventListener('input', () => { row.note = note.value; commit(); });
+        l2.append(lab, time, note);
+      }
+      day.appendChild(l2);
+      box.appendChild(day);
+    });
+  }
+
+  // ---------- Photos ----------
+  function resizeImage(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
         const img = new Image();
         img.onload = () => {
-          const maxDim = 960;
-          let { width, height } = img;
-          if (width > maxDim || height > maxDim) {
-            if (width >= height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
-            }
+          const max = 1000;
+          let { width: w, height: h } = img;
+          if (w > max || h > max) {
+            const r = Math.min(max / w, max / h);
+            w = Math.round(w * r);
+            h = Math.round(h * r);
           }
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.85));
+          const c = document.createElement('canvas');
+          c.width = w;
+          c.height = h;
+          const ctx = c.getContext('2d');
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(c.toDataURL('image/jpeg', 0.85));
         };
         img.onerror = reject;
         img.src = reader.result;
@@ -504,743 +822,679 @@
     });
   }
 
-  async function handlePhotoFiles(fileList) {
-    const files = Array.from(fileList).filter((f) => f.type.startsWith('image/'));
-    if (files.length === 0) return;
-
-    const remaining = 4 - state.photos.length;
-    if (remaining <= 0) {
-      showToast('写真は最大4枚まで追加できます。', true);
+  async function addPhotos(fileList) {
+    const files = Array.from(fileList || []).filter((f) => f.type && f.type.startsWith('image/'));
+    if (!files.length) return;
+    const room = 4 - state.photos.length;
+    if (room <= 0) {
+      showToast('写真は4枚までです。入れ替える場合は先に削除してください。', { error: true });
       return;
     }
-
-    const toAdd = files.slice(0, remaining);
-    for (const file of toAdd) {
+    let added = 0;
+    for (const f of files.slice(0, room)) {
       try {
-        const dataUrl = await resizeImageFile(file);
-        state.photos.push({
-          id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          dataUrl,
-          caption: ''
-        });
-      } catch (err) {
-        console.error(err);
-        showToast('画像の読み込みに失敗しました。', true);
+        state.photos.push({ id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, dataUrl: await resizeImage(f), caption: '' });
+        added++;
+      } catch (_) {
+        showToast('読み込めない画像がありました', { error: true });
       }
     }
-
-    saveState();
-    renderPhotoEditorList();
-    renderPreview();
-    showToast(`${toAdd.length}枚の写真を追加しました`);
+    renderPhotoEditor();
+    commit();
+    if (added) showToast(`写真を${added}枚追加しました${files.length > room ? '（4枚を超えた分は追加されていません）' : ''}`);
   }
 
-  function renderPhotoEditorList() {
-    const list = els.photoList;
-    list.innerHTML = '';
-    if (state.photos.length === 0) return;
-
-    state.photos.forEach((photo, idx) => {
-      const item = document.createElement('div');
-      item.className = 'photo-item';
-
-      const img = document.createElement('img');
-      img.className = 'photo-thumb';
-      img.src = photo.dataUrl;
-      item.appendChild(img);
-
-      const controls = document.createElement('div');
-      controls.className = 'photo-item-controls';
-
-      const capInput = document.createElement('input');
-      capInput.type = 'text';
-      capInput.placeholder = `写真${idx + 1}のキャプション（任意）`;
-      capInput.value = photo.caption || '';
-      capInput.addEventListener('input', (e) => {
-        photo.caption = e.target.value;
-        saveState();
-        renderPreview();
-      });
-      controls.appendChild(capInput);
-
-      const btns = document.createElement('div');
-      btns.className = 'photo-item-btns';
-
-      if (idx > 0) {
-        const upBtn = document.createElement('button');
-        upBtn.type = 'button';
-        upBtn.className = 'btn btn-sm btn-ghost';
-        upBtn.textContent = '↑';
-        upBtn.title = '前へ移動';
-        upBtn.addEventListener('click', () => {
-          [state.photos[idx - 1], state.photos[idx]] = [state.photos[idx], state.photos[idx - 1]];
-          saveState();
-          renderPhotoEditorList();
-          renderPreview();
+  function renderPhotoEditor() {
+    const box = els.photoEditor;
+    box.innerHTML = '';
+    state.photos.forEach((p, i) => {
+      const tile = document.createElement('div');
+      tile.className = 'photo-tile';
+      const imgWrap = document.createElement('div');
+      imgWrap.className = 'photo-tile-img';
+      imgWrap.innerHTML = `<img alt="写真${i + 1}" /><span class="photo-tile-num">${i + 1}</span><div class="photo-tile-tools"></div>`;
+      imgWrap.querySelector('img').src = p.dataUrl;
+      const tools = imgWrap.querySelector('.photo-tile-tools');
+      const mkBtn = (label, title, fn) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.title = title;
+        b.addEventListener('click', fn);
+        tools.appendChild(b);
+      };
+      if (i > 0) mkBtn('◀', '前へ', () => { [state.photos[i - 1], state.photos[i]] = [state.photos[i], state.photos[i - 1]]; renderPhotoEditor(); commit(); });
+      if (i < state.photos.length - 1) mkBtn('▶', '後ろへ', () => { [state.photos[i + 1], state.photos[i]] = [state.photos[i], state.photos[i + 1]]; renderPhotoEditor(); commit(); });
+      mkBtn('✕', '削除', () => {
+        const removed = state.photos.splice(i, 1)[0];
+        renderPhotoEditor();
+        commit();
+        showToast('写真を削除しました', {
+          actionLabel: '元に戻す',
+          onAction: () => { state.photos.splice(i, 0, removed); renderPhotoEditor(); commit(); }
         });
-        btns.appendChild(upBtn);
-      }
-
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.className = 'btn btn-sm btn-ghost';
-      delBtn.style.color = '#dc2626';
-      delBtn.textContent = '削除';
-      delBtn.addEventListener('click', () => {
-        state.photos.splice(idx, 1);
-        saveState();
-        renderPhotoEditorList();
-        renderPreview();
       });
-      btns.appendChild(delBtn);
-
-      controls.appendChild(btns);
-      item.appendChild(controls);
-      list.appendChild(item);
+      tile.appendChild(imgWrap);
+      const cap = document.createElement('input');
+      cap.type = 'text';
+      cap.placeholder = 'ひとこと（任意）';
+      cap.value = p.caption || '';
+      cap.addEventListener('input', () => { p.caption = cap.value; commit(); });
+      tile.appendChild(cap);
+      box.appendChild(tile);
     });
-  }
 
-  // ---------- AI Text Generation ----------
-  function buildAiPrompt(forManualCopy = false) {
-    const articleMemo = els.aiArticleMemo.value.trim();
-    const parentsMemo = els.aiParentsMemo.value.trim();
-    const toneMap = {
-      warm: '温かく親しみやすく、生徒の頑張りが保護者にも伝わる丁寧な文体',
-      energetic: '元気で前向き、中学生の生徒たちを温かく励ます文体',
-      formal: '落ち着いた丁寧語（です・ます調）で保護者に安心感を与える文体'
-    };
-    const lengthMap = {
-      short: '250〜350文字程度',
-      medium: '400〜550文字程度',
-      long: '600〜750文字程度'
-    };
-
-    const toneDesc = toneMap[els.aiTone.value] || toneMap.warm;
-    const lenDesc = lengthMap[els.aiLength.value] || lengthMap.medium;
-
-    const baseContext = `あなたは中学校（${state.className}）の担任教師です。
-学級通信「${state.logoText}」第${state.issueNumber}号の原稿を、以下のメモをもとに作成してください。
-
-【文体の指定】
-${toneDesc}
-
-【記事本文の文字数めやす】
-${lenDesc}（読みやすく2〜3段落に分けてください）
-
-【記事のメモ】
-${articleMemo || '（指定なし：今月の学校生活への励ましと季節のあいさつを作成）'}
-
-【保護者の皆様へ（右側の枠）のメモ】
-${parentsMemo || '（指定なし：日頃の感謝と体調管理・持ち物確認の短いお知らせを120〜180文字程度で作成）'}`;
-
-    if (forManualCopy) {
-      return `${baseContext}
-
-【出力形式】※必ずこの見出しの通りに出力してください（余計な前置きは不要です）
-【タイトル】
-（15〜22文字程度のキャッチーなタイトル）
-
-【記事】
-（記事本文）
-
-【保護者の皆様へ】
-（保護者向けメッセージ・120〜220文字程度）`;
+    if (state.photos.length < 4) {
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'photo-add';
+      add.innerHTML = `<span class="big">📷</span><b>写真を追加</b><span>クリック または ドロップ（あと${4 - state.photos.length}枚）</span>`;
+      add.addEventListener('click', () => els.photoInput.click());
+      add.addEventListener('dragover', (e) => { e.preventDefault(); add.classList.add('dragover'); });
+      add.addEventListener('dragleave', () => add.classList.remove('dragover'));
+      add.addEventListener('drop', (e) => { e.preventDefault(); add.classList.remove('dragover'); addPhotos(e.dataTransfer.files); });
+      box.appendChild(add);
     }
-
-    return `${baseContext}
-
-必ず次のJSON形式のみで回答してください（Markdownのコードブロック不要）：
-{
-  "title": "15〜22文字程度のタイトル",
-  "article": "記事本文（段落は改行\\n\\nで区切る）",
-  "parentsNote": "保護者向けお知らせ本文（120〜220文字程度）"
-}`;
+    box.classList.toggle('span-all', state.photos.length % 2 === 0);
   }
 
+  // ---------- AI ----------
+  function getApiKey() { return (localStorage.getItem(KEYS.api) || '').trim(); }
+  function updateAiMode() {
+    const has = !!getApiKey();
+    els.aiModeApi.hidden = !has;
+    els.aiModeManual.hidden = has;
+  }
   function setAiStatus(msg, type = '') {
     els.aiStatus.textContent = msg;
     els.aiStatus.className = `status-msg ${type}`;
   }
 
-  async function callGeminiApi(apiKey, prompt) {
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
-    let lastError = null;
+  function buildPrompt(forManual) {
+    const ai = state.ai;
+    const tone = {
+      warm: '温かく親しみやすく、生徒の頑張りが保護者にも伝わる文体',
+      energetic: '元気で前向き、中学生を温かく励ます文体',
+      formal: '落ち着いた丁寧語（です・ます調）で保護者に安心感を与える文体'
+    }[ai.tone] || '';
+    const len = { short: '250〜350文字程度', medium: '400〜550文字程度', long: '600〜750文字程度' }[ai.length] || '';
+    const ctx = `あなたは中学校の担任教師です。学級通信「${state.logoText}」（${state.className}）第${state.issueNumber}号の原稿を、次のメモをもとに作成してください。
 
+【文体】${tone}
+【本文の長さ】${len}（2〜3段落。段落の間は空行）
+【記事のメモ】
+${ai.articleMemo.trim() || '（特になし：最近の学校生活の様子と季節のあいさつ）'}
+【保護者へのお知らせのメモ】
+${ai.parentsMemo.trim() || '（特になし：日頃の感謝と体調管理のお願いを短く）'}
+
+※生徒の個人名は使わないでください。`;
+    if (forManual) {
+      return `${ctx}
+
+次の形式で、前置きなしで出力してください。
+【タイトル】
+（15〜22文字程度）
+【記事】
+（本文）
+【保護者の皆様へ】
+（120〜220文字程度）`;
+    }
+    return `${ctx}
+
+次のJSON形式のみで回答してください。
+{"title":"15〜22文字程度のタイトル","article":"本文（段落は\\n\\nで区切る）","parentsNote":"保護者向け本文（120〜220文字程度）"}`;
+  }
+
+  async function callGemini(apiKey, prompt) {
+    const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+    let lastErr = null;
     for (const model of models) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-        const res = await fetch(url, {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.75,
-              responseMimeType: 'application/json'
-            }
+            generationConfig: { temperature: 0.75, responseMimeType: 'application/json' }
           })
         });
-
         if (!res.ok) {
-          const errJson = await res.json().catch(() => ({}));
-          const errMsg = errJson?.error?.message || `HTTP ${res.status}`;
-          throw new Error(`${model}: ${errMsg}`);
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j?.error?.message || `HTTP ${res.status}`);
         }
-
         const data = await res.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!text) throw new Error('AIから空の応答が返されました。');
+        if (!text) throw new Error('AIの応答が空でした');
         return text;
       } catch (err) {
-        lastError = err;
+        lastErr = err;
       }
     }
-    throw lastError || new Error('Gemini APIの呼び出しに失敗しました。');
+    throw lastErr || new Error('AIの呼び出しに失敗しました');
   }
 
-  function parseAiOutput(rawText) {
-    const trimmed = (rawText || '').trim();
-    if (!trimmed) return null;
-
-    // 1. JSONとしてパースを試行
+  function parseAi(raw) {
+    const t = (raw || '').trim();
+    if (!t) return null;
     try {
-      const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const obj = JSON.parse(jsonMatch[0]);
-        if (obj.title || obj.article || obj.parentsNote) {
-          return {
-            title: (obj.title || '').trim(),
-            article: (obj.article || '').trim(),
-            parentsNote: (obj.parentsNote || '').trim()
-          };
+      const m = t.match(/\{[\s\S]*\}/);
+      if (m) {
+        const o = JSON.parse(m[0]);
+        if (o.title || o.article || o.parentsNote) {
+          return { title: (o.title || '').trim(), article: (o.article || '').trim(), parentsNote: (o.parentsNote || '').trim() };
         }
       }
-    } catch (_) {}
-
-    // 2. 見出し形式（【タイトル】【記事】【保護者の皆様へ】）としてパース
-    const titleMatch = trimmed.match(/【タイトル】\s*([\s\S]*?)(?=【記事】|【保護者の皆様へ】|$)/);
-    const articleMatch = trimmed.match(/【記事】\s*([\s\S]*?)(?=【保護者の皆様へ】|$)/);
-    const parentsMatch = trimmed.match(/【保護者の皆様へ】\s*([\s\S]*?)$/);
-
-    if (titleMatch || articleMatch || parentsMatch) {
+    } catch (_) { /* not json */ }
+    const clean = t.replace(/\*\*/g, '').replace(/^#+\s*/gm, '');
+    const title = clean.match(/【タイトル】\s*([\s\S]*?)(?=【記事】|【保護者の皆様へ】|$)/);
+    const article = clean.match(/【記事】\s*([\s\S]*?)(?=【保護者の皆様へ】|$)/);
+    const parents = clean.match(/【保護者の皆様へ】\s*([\s\S]*?)$/);
+    if (title || article || parents) {
       return {
-        title: titleMatch ? titleMatch[1].trim() : '',
-        article: articleMatch ? articleMatch[1].trim() : '',
-        parentsNote: parentsMatch ? parentsMatch[1].trim() : ''
+        title: title ? title[1].trim().replace(/^[「『]|[」』]$/g, '') : '',
+        article: article ? article[1].trim() : '',
+        parentsNote: parents ? parents[1].trim() : ''
       };
     }
-
-    // 3. どの形式にも当てはまらない場合は全体を記事として扱う
-    return { title: '', article: trimmed, parentsNote: '' };
+    return { title: '', article: t, parentsNote: '' };
   }
 
-  function applyParsedAiResult(parsed) {
+  function applyAi(parsed) {
     if (!parsed) return false;
+    const before = { articleTitle: state.articleTitle, articleBody: state.articleBody, parentsNote: state.parentsNote };
     if (parsed.title) state.articleTitle = parsed.title;
     if (parsed.article) state.articleBody = parsed.article;
     if (parsed.parentsNote) state.parentsNote = parsed.parentsNote;
-    saveState();
-    syncInputsFromState();
-    renderPreview();
+    syncInputs();
+    commit();
+    showToast('AIの文章をお便りに入れました', {
+      actionLabel: '元に戻す',
+      onAction: () => { Object.assign(state, before); syncInputs(); commit(); }
+    });
     return true;
   }
 
-  // ---------- History & Backup ----------
-  function loadHistory() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY_HISTORY);
-      return raw ? JSON.parse(raw) : [];
-    } catch (_) {
-      return [];
+  // ---------- Zoom ----------
+  let zoomFull = false;
+  function updateZoom() {
+    const vp = els.previewViewport;
+    const fit = Math.max(0.3, Math.min((vp.clientWidth - 40) / SHEET_W, (vp.clientHeight - 40) / SHEET_H, 1.2));
+    const scale = zoomFull ? 1 : fit;
+    els.sheet.style.transform = `scale(${scale})`;
+    els.sheetWrapper.style.width = `${SHEET_W * scale}px`;
+    els.sheetWrapper.style.height = `${SHEET_H * scale}px`;
+    els.btnZoomToggle.textContent = zoomFull ? '🔍 全体表示' : `🔍 拡大（${Math.round(fit * 100)}%表示中）`;
+  }
+
+  // ---------- Modals ----------
+  function openModal(m) { m.hidden = false; }
+  function closeModal(m) { m.hidden = true; }
+
+  function openExport() {
+    render();
+    els.exportIssueLabel.textContent = `第${state.issueNumber}号`;
+    const checks = collectChecks();
+    els.checkList.innerHTML = '';
+    const warns = checks.filter((c) => c.level === 'warn');
+    if (!warns.length) {
+      const ok = document.createElement('div');
+      ok.className = 'check-item ok';
+      ok.innerHTML = '<span>✓ 問題は見つかりませんでした。このまま書き出せます。</span>';
+      els.checkList.appendChild(ok);
     }
+    checks.forEach((c) => {
+      const row = document.createElement('div');
+      row.className = `check-item ${c.level}`;
+      row.innerHTML = `<span>${c.level === 'warn' ? '⚠' : 'ℹ'} ${escapeHtml(c.text)}</span>`;
+      const fix = document.createElement('button');
+      fix.type = 'button';
+      fix.className = 'link';
+      fix.textContent = '直す';
+      fix.addEventListener('click', () => { closeModal(els.exportModal); goToSection(c.target, c.focus); });
+      row.appendChild(fix);
+      els.checkList.appendChild(row);
+    });
+    openModal(els.exportModal);
   }
 
-  function saveHistory(list) {
-    localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(list));
+  function exportPayload() {
+    const cells = weekCells();
+    return {
+      ...clone(state),
+      articleFontSize: fitResult.article.size,
+      parentsFontSize: fitResult.parents.size,
+      issueDateText: eraDate(state.issueDate),
+      scheduleBannerText: bannerText(),
+      weekDates: cells.map((c) => ({ month: c.month, dayLabel: c.dayLabel })),
+      monthSpans: monthSpans(cells),
+      scheduleRows: state.schedule.map((r) => ({
+        kind: r.type,
+        periods: r.periods.slice(),
+        spanText: r.eventText || (r.type === 'holiday' ? '休み' : '行事'),
+        lunch: r.lunch,
+        clean: r.clean,
+        club: r.club,
+        noteText: rowNoteText(r)
+      })),
+      houseSvgElement: $('houseSvg')
+    };
   }
 
-  function renderHistoryModal() {
-    const list = loadHistory();
-    els.historyList.innerHTML = '';
-    if (list.length === 0) {
-      els.historyList.innerHTML = '<p class="help-text">保存された号はまだありません。「現在の号を履歴に保存」を押すとここに記録されます。</p>';
+  function fileBase() { return `学級通信HOME_第${state.issueNumber}号_${state.issueDate || ''}`; }
+
+  function download(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  async function doExport(kind, btn) {
+    saveToHistory();
+    if (kind === 'print') {
+      closeModal(els.exportModal);
+      setTimeout(() => window.print(), 150);
       return;
     }
-
-    list.forEach((item, idx) => {
-      const row = document.createElement('div');
-      row.className = 'history-row';
-
-      const info = document.createElement('div');
-      info.className = 'history-row-info';
-      info.innerHTML = `<strong>第${item.issueNumber}号「${escapeHtml(item.articleTitle || '無題')}」</strong>
-        <span>${formatJapaneseEraDate(item.issueDate)}（保存: ${item.savedAt || ''}）</span>`;
-      row.appendChild(info);
-
-      const btns = document.createElement('div');
-      btns.className = 'history-row-btns';
-
-      const loadBtn = document.createElement('button');
-      loadBtn.type = 'button';
-      loadBtn.className = 'btn btn-sm btn-primary';
-      loadBtn.textContent = '読み込む';
-      loadBtn.addEventListener('click', () => {
-        if (!confirm(`第${item.issueNumber}号を読み込みますか？（現在の編集内容は上書きされます）`)) return;
-        state = clone(item.data);
-        saveState();
-        syncInputsFromState();
-        renderPreview();
-        els.historyModal.classList.add('hidden');
-        showToast(`第${item.issueNumber}号を読み込みました`);
-      });
-
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.className = 'btn btn-sm btn-ghost';
-      delBtn.style.color = '#dc2626';
-      delBtn.textContent = '削除';
-      delBtn.addEventListener('click', () => {
-        list.splice(idx, 1);
-        saveHistory(list);
-        renderHistoryModal();
-      });
-
-      btns.appendChild(loadBtn);
-      btns.appendChild(delBtn);
-      row.appendChild(btns);
-      els.historyList.appendChild(row);
-    });
-  }
-
-  function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, (m) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    }[m]));
-  }
-
-  // ---------- Zoom Control ----------
-  function updateZoom() {
-    const sheetW = 1122;
-    const sheetH = 794;
-    let scale = manualZoom;
-    if (zoomMode === 'fit') {
-      const vpW = els.previewViewport.clientWidth - 40;
-      const vpH = els.previewViewport.clientHeight - 40;
-      scale = Math.min(vpW / sheetW, vpH / sheetH, 1.15);
-      scale = Math.max(0.35, scale);
-      els.zoomLabel.textContent = `${Math.round(scale * 100)}%`;
-    } else {
-      els.zoomLabel.textContent = `${Math.round(scale * 100)}%`;
+    btn.disabled = true;
+    try {
+      if (kind === 'docx') {
+        const blob = await window.HomeDocxBuilder.buildDocxBlob(exportPayload());
+        download(blob, `${fileBase()}.docx`);
+        showToast('Wordファイルを保存しました（ダウンロードフォルダ）');
+      } else {
+        const blob = await window.HomePngExporter.buildPngBlob(exportPayload());
+        download(blob, `${fileBase()}.png`);
+        showToast('画像を保存しました。LINEのトークに添付して送れます');
+      }
+      closeModal(els.exportModal);
+    } catch (err) {
+      console.error(err);
+      showToast(`書き出しに失敗しました：${err.message}`, { error: true });
+    } finally {
+      btn.disabled = false;
     }
-    els.sheetWrapper.style.transform = `scale(${scale})`;
-    // 縮小時に余分なスクロール余白が出ないように高さ調整
-    els.sheetWrapper.style.height = `${sheetH * scale}px`;
-    els.sheetWrapper.style.width = `${sheetW * scale}px`;
   }
 
-  // ---------- Event Bindings ----------
-  function bindEvents() {
-    // Tabs
-    document.querySelectorAll('.tab-btn').forEach((btn) => {
-      btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-    });
-
-    document.getElementById('btnJumpToAi1').addEventListener('click', () => switchTab('ai'));
-    document.getElementById('btnJumpToAi2').addEventListener('click', () => switchTab('ai'));
-
-    // Basic fields
-    const simpleBindings = [
-      ['issueNumber', 'issueNumber'],
-      ['articleTitle', 'articleTitle'],
-      ['articleBody', 'articleBody'],
-      ['articleFontSize', 'articleFontSize'],
-      ['parentsNote', 'parentsNote'],
-      ['parentsFontSize', 'parentsFontSize'],
-      ['logoText', 'logoText'],
-      ['schoolName', 'schoolName'],
-      ['className', 'className'],
-      ['publisherName', 'publisherName'],
-      ['photoCornerTitle', 'photoCornerTitle'],
-      ['apronGroups', 'apronGroups']
-    ];
-
-    simpleBindings.forEach(([elKey, stateKey]) => {
-      els[elKey].addEventListener('input', (e) => {
-        state[stateKey] = elKey === 'issueNumber' ? (parseInt(e.target.value, 10) || 1) : e.target.value;
-        saveState();
-        renderPreview();
-      });
-    });
-
-    // Issue Date -> auto update next week Monday
-    els.issueDate.addEventListener('change', (e) => {
-      state.issueDate = e.target.value;
-      const d = parseDateISO(state.issueDate);
-      if (d) {
-        state.scheduleStartDate = formatDateISO(getNextMonday(d));
-        els.scheduleStartDate.value = state.scheduleStartDate;
-        renderScheduleEditor();
-      }
-      saveState();
-      renderPreview();
-    });
-
-    els.scheduleStartDate.addEventListener('change', (e) => {
-      state.scheduleStartDate = e.target.value;
-      saveState();
-      renderScheduleEditor();
-      renderPreview();
-    });
-
-    document.getElementById('btnAutoCalcDates').addEventListener('click', () => {
-      const d = parseDateISO(state.issueDate);
-      if (!d) return;
-      state.scheduleStartDate = formatDateISO(getNextMonday(d));
-      els.scheduleStartDate.value = state.scheduleStartDate;
-      saveState();
-      renderScheduleEditor();
-      renderPreview();
-      showToast('発行日の翌週（月〜金）に日付を合わせました');
-    });
-
-    // Quick Apron Chips
-    document.querySelectorAll('.chip[data-apron]').forEach((chip) => {
-      chip.addEventListener('click', () => {
-        state.apronGroups = chip.dataset.apron;
-        els.apronGroups.value = state.apronGroups;
-        saveState();
-        renderPreview();
-      });
-    });
-
-    // Schedule Preset buttons
-    document.getElementById('btnResetSchedule').addEventListener('click', () => {
-      if (!confirm('今の時間割を基本時間割に戻しますか？')) return;
-      state.schedule = getSavedDefaultSchedule();
-      saveState();
-      renderScheduleEditor();
-      renderPreview();
-      showToast('基本時間割に戻しました');
-    });
-
-    document.getElementById('btnSaveDefaultSchedule').addEventListener('click', () => {
-      localStorage.setItem(STORAGE_KEY_DEFAULT_SCHEDULE, JSON.stringify(state.schedule));
-      showToast('現在の時間割を「基本時間割」として保存しました');
-    });
-
-    // Photo Dropzone
-    els.photoDropzone.addEventListener('click', () => els.photoInput.click());
-    els.photoInput.addEventListener('change', (e) => {
-      handlePhotoFiles(e.target.files);
-      e.target.value = '';
-    });
-    els.photoDropzone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      els.photoDropzone.classList.add('dragover');
-    });
-    els.photoDropzone.addEventListener('dragleave', () => {
-      els.photoDropzone.classList.remove('dragover');
-    });
-    els.photoDropzone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      els.photoDropzone.classList.remove('dragover');
-      handlePhotoFiles(e.dataTransfer.files);
-    });
-    document.getElementById('btnClearPhotos').addEventListener('click', () => {
-      if (state.photos.length === 0) return;
-      if (!confirm('フォトコーナーの写真をすべて削除しますか？')) return;
-      state.photos = [];
-      saveState();
-      renderPhotoEditorList();
-      renderPreview();
-    });
-
-    // AI API Key persistence
-    els.geminiApiKey.value = localStorage.getItem(STORAGE_KEY_API) || '';
-    els.geminiApiKey.addEventListener('input', (e) => {
-      localStorage.setItem(STORAGE_KEY_API, e.target.value.trim());
-    });
-    document.getElementById('btnToggleKey').addEventListener('click', (e) => {
-      const isPass = els.geminiApiKey.type === 'password';
-      els.geminiApiKey.type = isPass ? 'text' : 'password';
-      e.target.textContent = isPass ? '隠す' : '表示';
-    });
-
-    // AI Direct Generation
-    document.getElementById('btnGenerateAi').addEventListener('click', async () => {
-      const apiKey = els.geminiApiKey.value.trim();
-      if (!apiKey) {
-        setAiStatus('Gemini APIキーを入力してください（キーがない場合は下の「方法2」が使えます）', 'error');
-        return;
-      }
-      const btn = document.getElementById('btnGenerateAi');
-      btn.disabled = true;
-      setAiStatus('✨ AIが文章を作成しています…', 'loading');
-      try {
-        const prompt = buildAiPrompt(false);
-        const text = await callGeminiApi(apiKey, prompt);
-        const parsed = parseAiOutput(text);
-        if (applyParsedAiResult(parsed)) {
-          setAiStatus('✅ 文章を生成してお便りに反映しました！', 'success');
-          showToast('AI文章を反映しました');
-        } else {
-          setAiStatus('生成結果の読み取りに失敗しました。もう一度お試しください。', 'error');
-        }
-      } catch (err) {
-        console.error(err);
-        setAiStatus(`エラー: ${err.message}`, 'error');
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
-    // AI Prompt Copy (No API key needed)
-    document.getElementById('btnCopyPrompt').addEventListener('click', async () => {
-      const prompt = buildAiPrompt(true);
-      try {
-        await navigator.clipboard.writeText(prompt);
-        showToast('AI用プロンプトをコピーしました！ChatGPTやGeminiに貼り付けてください');
-      } catch (_) {
-        const ta = document.createElement('textarea');
-        ta.value = prompt;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        showToast('AI用プロンプトをコピーしました！');
-      }
-    });
-
-    document.getElementById('btnApplyPastedAi').addEventListener('click', () => {
-      const text = els.aiPasteResult.value.trim();
-      if (!text) {
-        showToast('AIの返答を貼り付けてください', true);
-        return;
-      }
-      const parsed = parseAiOutput(text);
-      if (applyParsedAiResult(parsed)) {
-        showToast('お便りに反映しました！プレビューを確認してください');
-        switchTab('basic');
-      }
-    });
-
-    // Header Actions
-    document.getElementById('btnNextIssue').addEventListener('click', () => {
-      if (!confirm('現在の内容を履歴に自動保存したあと、号数を+1・発行日を1週間進めて新しい号を作成しますか？')) return;
-      saveCurrentToHistoryInternal();
-      state.issueNumber = (parseInt(state.issueNumber, 10) || 0) + 1;
-      const curDate = parseDateISO(state.issueDate) || getNearestFriday();
-      curDate.setDate(curDate.getDate() + 7);
-      state.issueDate = formatDateISO(curDate);
-      state.scheduleStartDate = formatDateISO(getNextMonday(curDate));
-      state.articleTitle = '';
-      state.articleBody = '';
-      state.parentsNote = '';
-      state.photos = [];
-      state.schedule = getSavedDefaultSchedule();
-      // エプロン班を自動交互切替（1・2・3 ⇄ 4・5・6）
-      if (state.apronGroups === '1・2・3') state.apronGroups = '4・5・6';
-      else if (state.apronGroups === '4・5・6') state.apronGroups = '1・2・3';
-
-      saveState();
-      syncInputsFromState();
-      renderPreview();
-      showToast(`第${state.issueNumber}号の準備ができました！（前の号は履歴に保存済み）`);
-    });
-
-    document.getElementById('btnSample').addEventListener('click', () => {
-      if ((state.articleBody || state.articleTitle) && !confirm('現在のタイトル・記事・保護者向けメッセージを記入例で上書きしますか？')) return;
-      state.articleTitle = '合唱コンクールに向けて、心をひとつに！';
-      state.articleBody =
-        '今週から、いよいよ合唱コンクールに向けたパート練習が本格的にスタートしました。放課後の教室からは、各パートリーダーを中心に「もう一回ここを合わせよう！」「強弱をはっきりさせよう」と前向きな声が聞こえてきます。\n\n' +
-        '最初は少し恥ずかしそうにしていた生徒たちも、日を追うごとに表情が真剣になり、クラス全体でひとつの曲を作り上げようとする一体感が生まれてきました。3年生として迎える最後の合唱コンクール、自分たちらしい最高のハーモニーを響かせてくれることを楽しみにしています。\n\n' +
-        '季節の変わり目で朝晩の寒暖差が大きくなっています。本番に向けて喉のケアや手洗い・うがい、十分な睡眠を心がけて過ごしましょう。';
-      state.parentsNote =
-        'いつも学級活動への温かいご理解とご協力をありがとうございます。\n\n' +
-        '① 進路希望調査（第2回）の提出期限は来週火曜日となっております。ご家庭でご確認のうえ、お子様を通じてご提出ください。\n' +
-        '② 来週から放課後の合唱練習が始まるため、帰学終了予定時刻が普段より少し遅くなる日があります。下の予定表をご確認いただけますと幸いです。';
-      saveState();
-      syncInputsFromState();
-      renderPreview();
-      showToast('記入例を読み込みました！');
-    });
-
-    // History Modal
-    document.getElementById('btnHistory').addEventListener('click', () => {
-      renderHistoryModal();
-      els.historyModal.classList.remove('hidden');
-    });
-    document.getElementById('btnCloseHistory').addEventListener('click', () => {
-      els.historyModal.classList.add('hidden');
-    });
-    els.historyModal.addEventListener('click', (e) => {
-      if (e.target === els.historyModal) els.historyModal.classList.add('hidden');
-    });
-
-    document.getElementById('btnSaveCurrentToHistory').addEventListener('click', () => {
-      saveCurrentToHistoryInternal();
-      renderHistoryModal();
-      showToast(`第${state.issueNumber}号を履歴に保存しました`);
-    });
-
-    document.getElementById('btnExportJson').addEventListener('click', () => {
-      const payload = {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        currentState: state,
-        defaultSchedule: getSavedDefaultSchedule(),
-        history: loadHistory()
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      triggerDownload(blob, `HOME学級通信バックアップ_${state.issueDate || 'backup'}.json`);
-      showToast('バックアップファイルを保存しました');
-    });
-
-    document.getElementById('importJsonInput').addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const parsed = JSON.parse(reader.result);
-          if (parsed.currentState) {
-            state = parsed.currentState;
-            saveState();
-          }
-          if (parsed.defaultSchedule) {
-            localStorage.setItem(STORAGE_KEY_DEFAULT_SCHEDULE, JSON.stringify(parsed.defaultSchedule));
-          }
-          if (Array.isArray(parsed.history)) {
-            saveHistory(parsed.history);
-          }
-          syncInputsFromState();
-          renderPreview();
-          renderHistoryModal();
-          showToast('バックアップを復元しました！');
-        } catch (_) {
-          showToast('バックアップファイルの形式が正しくありません', true);
-        }
-      };
-      reader.readAsText(file);
-      e.target.value = '';
-    });
-
-    // Zoom
-    document.getElementById('btnZoomIn').addEventListener('click', () => {
-      zoomMode = 'manual';
-      manualZoom = Math.min(1.4, manualZoom + 0.1);
-      updateZoom();
-    });
-    document.getElementById('btnZoomOut').addEventListener('click', () => {
-      zoomMode = 'manual';
-      manualZoom = Math.max(0.4, manualZoom - 0.1);
-      updateZoom();
-    });
-    document.getElementById('btnZoomFit').addEventListener('click', () => {
-      zoomMode = 'fit';
-      updateZoom();
-    });
-    window.addEventListener('resize', () => {
-      if (zoomMode === 'fit') updateZoom();
-    });
-
-    // Export Buttons
-    document.getElementById('btnExportDocx').addEventListener('click', async () => {
-      try {
-        showToast('Wordファイルを作成中…');
-        const exportPayload = buildExportPayload();
-        const blob = await window.HomeDocxBuilder.buildDocxBlob(exportPayload);
-        const safeNum = state.issueNumber || '0';
-        triggerDownload(blob, `HOME_学級通信_第${safeNum}号.docx`);
-        showToast('Word (.docx) ファイルをダウンロードしました！');
-      } catch (err) {
-        console.error(err);
-        showToast(`Word書き出しに失敗しました: ${err.message}`, true);
-      }
-    });
-
-    document.getElementById('btnExportPng').addEventListener('click', async () => {
-      try {
-        showToast('LINE共有用の高画質画像を作成中…');
-        const exportPayload = buildExportPayload();
-        const blob = await window.HomePngExporter.buildPngBlob(exportPayload);
-        const safeNum = state.issueNumber || '0';
-        triggerDownload(blob, `HOME_学級通信_第${safeNum}号.png`);
-        showToast('画像 (PNG) をダウンロードしました！LINEでそのまま送れます');
-      } catch (err) {
-        console.error(err);
-        showToast(`画像書き出しに失敗しました: ${err.message}`, true);
-      }
-    });
-
-    document.getElementById('btnPrintPdf').addEventListener('click', () => {
-      window.print();
-    });
+  // ---------- History ----------
+  function loadHistory() {
+    try { return JSON.parse(localStorage.getItem(KEYS.history) || '[]'); } catch (_) { return []; }
   }
-
-  function switchTab(tabName) {
-    document.querySelectorAll('.tab-btn').forEach((b) => {
-      b.classList.toggle('active', b.dataset.tab === tabName);
-    });
-    document.querySelectorAll('.tab-panel').forEach((p) => {
-      p.classList.toggle('active', p.id === `tab-${tabName}`);
-    });
+  function saveHistoryList(list) {
+    try {
+      localStorage.setItem(KEYS.history, JSON.stringify(list));
+    } catch (_) {
+      // 容量不足時は古い号の写真を外して再試行
+      list.slice(5).forEach((h) => { if (h.data) h.data.photos = []; });
+      try { localStorage.setItem(KEYS.history, JSON.stringify(list)); } catch (e) { showToast('保存容量が不足しています。古い号を削除してください。', { error: true }); }
+    }
   }
-
-  function saveCurrentToHistoryInternal() {
+  function saveToHistory() {
     const list = loadHistory();
     const now = new Date();
-    const savedAt = `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const entry = {
       issueNumber: state.issueNumber,
       issueDate: state.issueDate,
       articleTitle: state.articleTitle,
-      savedAt,
+      savedAt: `${now.getMonth() + 1}/${now.getDate()} ${pad2(now.getHours())}:${pad2(now.getMinutes())}`,
       data: clone(state)
     };
-    const existingIdx = list.findIndex((x) => x.issueNumber === state.issueNumber && x.issueDate === state.issueDate);
-    if (existingIdx >= 0) list[existingIdx] = entry;
-    else list.unshift(entry);
-    saveHistory(list.slice(0, 30));
+    const idx = list.findIndex((h) => h.issueNumber === state.issueNumber);
+    if (idx >= 0) list.splice(idx, 1);
+    list.unshift(entry);
+    list.sort((a, b) => b.issueNumber - a.issueNumber);
+    saveHistoryList(list.slice(0, 40));
     cloudSaveEntry(entry);
   }
 
-  function buildExportPayload() {
-    const weekDates = getWeekDates(state.scheduleStartDate);
-    return {
-      ...clone(state),
-      issueDateText: formatJapaneseEraDate(state.issueDate),
-      scheduleBannerText: computeScheduleBannerText(),
-      weekDates,
-      monthSpans: getMonthSpans(weekDates),
-      houseSvgElement: document.getElementById('houseSvg')
+  function openIssueModal() {
+    const cur = fromISO(state.issueDate) || fridayOfWeek(new Date());
+    const nextD = addDays(cur, 7);
+    els.nextIssueDesc.textContent = `第${state.issueNumber + 1}号・${shortDate(nextD)}発行で作成します。今の号は自動で保存され、記事・写真・保護者欄は空に、時間割は「いつもの時間割」に戻ります。`;
+    renderHistory();
+    openModal(els.issueModal);
+  }
+
+  function renderHistory() {
+    const list = loadHistory();
+    els.historyList.innerHTML = '';
+    if (!list.length) {
+      els.historyList.innerHTML = '<p class="muted small">まだ保存した号はありません。書き出すと自動でここに保存されます。</p>';
+      return;
+    }
+    list.forEach((h, i) => {
+      const row = document.createElement('div');
+      row.className = `history-row ${h.issueNumber === state.issueNumber ? 'is-current' : ''}`;
+      row.innerHTML = `<div class="history-info"><b>第${h.issueNumber}号　${escapeHtml(h.articleTitle || '（タイトルなし）')}</b><span>${escapeHtml(eraDate(h.issueDate))}・保存 ${escapeHtml(h.savedAt || '')}</span></div><div class="history-btns"></div>`;
+      const btns = row.querySelector('.history-btns');
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'btn btn-outline btn-sm';
+      open.textContent = '開く';
+      open.addEventListener('click', () => {
+        saveToHistory();
+        state = migrate(clone(h.data));
+        syncInputs();
+        commit();
+        closeModal(els.issueModal);
+        showToast(`第${h.issueNumber}号を開きました（編集中だった号は保存済み）`);
+      });
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn-ghost btn-sm danger';
+      del.textContent = '削除';
+      del.addEventListener('click', () => {
+        if (!confirm(`第${h.issueNumber}号を一覧から削除しますか？`)) return;
+        list.splice(i, 1);
+        saveHistoryList(list);
+        renderHistory();
+      });
+      btns.append(open, del);
+      els.historyList.appendChild(row);
+    });
+  }
+
+  function createNextIssue() {
+    saveToHistory();
+    const cur = fromISO(state.issueDate) || fridayOfWeek(new Date());
+    const nextD = addDays(cur, 7);
+    const groups = state.apronGroups.join(',');
+    state = {
+      ...state,
+      issueNumber: state.issueNumber + 1,
+      issueDate: toISO(nextD),
+      articleTitle: '',
+      articleBody: '',
+      parentsNote: '',
+      photos: [],
+      schedule: getBase().map(rowFromBase),
+      ai: { ...state.ai, articleMemo: '', parentsMemo: '' },
+      apronGroups: groups === '1,2,3' ? [4, 5, 6] : groups === '4,5,6' ? [1, 2, 3] : state.apronGroups
     };
+    state.scheduleStartDate = toISO(nextMonday(nextD));
+    applyAutoHolidays();
+    syncInputs();
+    commit();
+    closeModal(els.issueModal);
+    goToSection('sec-article');
+    showToast(`第${state.issueNumber}号を作成しました。記事から書き始めましょう`);
   }
 
-  function triggerDownload(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  // ---------- Sample ----------
+  function loadSample() {
+    if ((state.articleBody || state.parentsNote) && !confirm('今の記事・保護者欄を記入例で上書きしますか？')) return;
+    state.articleTitle = '合唱コンクールに向けて、心をひとつに！';
+    state.articleBody =
+      '今週から、いよいよ合唱コンクールに向けたパート練習が本格的にスタートしました。放課後の教室からは、パートリーダーを中心に「もう一回ここを合わせよう！」「強弱をはっきりさせよう」と前向きな声が聞こえてきます。\n\n' +
+      '最初は少し恥ずかしそうにしていた生徒たちも、日を追うごとに表情が真剣になり、クラス全体でひとつの曲を作り上げようとする一体感が生まれてきました。3年生として迎える最後の合唱コンクール、自分たちらしい最高のハーモニーを響かせてくれることを楽しみにしています。\n\n' +
+      '季節の変わり目で朝晩の寒暖差が大きくなっています。本番に向けて喉のケアや手洗い・うがい、十分な睡眠を心がけて過ごしましょう。';
+    state.parentsNote =
+      'いつも学級活動への温かいご理解とご協力をありがとうございます。\n\n' +
+      '① 進路希望調査（第2回）の提出期限は来週火曜日です。ご家庭でご確認のうえ、お子様を通じてご提出ください。\n' +
+      '② 来週から放課後の合唱練習が始まるため、帰学時刻が普段より遅くなる日があります。下の予定表をご確認ください。';
+    syncInputs();
+    commit();
+    dismissWelcome();
+    closeModal(els.settingsModal);
+    showToast('記入例を読み込みました');
   }
 
+  function dismissWelcome() {
+    els.welcome.hidden = true;
+    localStorage.setItem(KEYS.welcome, '1');
+  }
+
+  // ---------- Events ----------
+  function bindEvents() {
+    bindDataInputs();
+
+    // actions via data-act
+    document.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-act]');
+      if (!el) return;
+      const act = el.dataset.act;
+      if (act === 'open-export') openExport();
+      else if (act === 'open-settings') openModal(els.settingsModal);
+      else if (act === 'load-sample') loadSample();
+      else if (act === 'dismiss-welcome') dismissWelcome();
+      else if (act === 'issue-inc' || act === 'issue-dec') {
+        state.issueNumber = Math.max(1, state.issueNumber + (act === 'issue-inc' ? 1 : -1));
+        document.querySelector('[data-bind="issueNumber"]').value = state.issueNumber;
+        commit();
+      } else if (act === 'date-this-fri') setIssueDate(toISO(fridayOfWeek(new Date())));
+      else if (act === 'date-next-fri') setIssueDate(toISO(addDays(fridayOfWeek(new Date()), 7)));
+    });
+
+    // stepper
+    els.stepper.addEventListener('click', (e) => {
+      const b = e.target.closest('.step');
+      if (b) goToSection(b.dataset.target);
+    });
+    els.editorScroll.addEventListener('scroll', () => requestAnimationFrame(updateActiveStep));
+
+    // preview click-to-edit
+    els.sheet.addEventListener('click', (e) => {
+      const area = e.target.closest('[data-edit]');
+      if (!area) return;
+      const target = area.dataset.edit;
+      if (target === 'sec-photos' && state.photos.length === 0) {
+        els.photoInput.click();
+        return;
+      }
+      const focusMap = { 'sec-article': e.target.closest('#pvArticleTitle') ? 'articleTitle' : 'articleBody', 'sec-parents': 'parentsNote' };
+      goToSection(target, focusMap[target]);
+    });
+
+    // photo drops on preview
+    els.pvPhotoBox.addEventListener('dragover', (e) => { e.preventDefault(); els.pvPhotoBox.classList.add('dragover'); });
+    els.pvPhotoBox.addEventListener('dragleave', () => els.pvPhotoBox.classList.remove('dragover'));
+    els.pvPhotoBox.addEventListener('drop', (e) => { e.preventDefault(); els.pvPhotoBox.classList.remove('dragover'); addPhotos(e.dataTransfer.files); });
+    els.photoInput.addEventListener('change', () => { addPhotos(els.photoInput.files); els.photoInput.value = ''; });
+
+    // paste image anywhere
+    document.addEventListener('paste', (e) => {
+      if (e.target === els.aiPasteBox) return;
+      const files = Array.from(e.clipboardData?.files || []).filter((f) => f.type.startsWith('image/'));
+      if (files.length) {
+        e.preventDefault();
+        addPhotos(files);
+      }
+    });
+
+    // dates
+    els.issueDate.addEventListener('change', () => { if (els.issueDate.value) setIssueDate(els.issueDate.value); });
+    els.scheduleStartDate.addEventListener('change', () => {
+      const d = fromISO(els.scheduleStartDate.value);
+      if (!d) return;
+      if (d.getDay() !== 1) {
+        const mon = addDays(d, -((d.getDay() + 6) % 7));
+        showToast(`週の始まりを月曜（${shortDate(mon)}）に合わせました`);
+        setScheduleStart(toISO(mon));
+      } else {
+        setScheduleStart(els.scheduleStartDate.value);
+      }
+    });
+
+    // schedule base
+    $('btnSaveBase').addEventListener('click', () => {
+      const base = state.schedule.map((r) => ({ periods: r.periods.slice(), lunch: r.lunch, clean: r.clean, club: r.club, endTime: r.endTime, note: r.note }));
+      localStorage.setItem(KEYS.base, JSON.stringify(base));
+      showToast('「いつもの時間割」に登録しました。次の号から自動で使われます');
+    });
+    $('btnResetBase').addEventListener('click', () => {
+      const before = clone(state.schedule);
+      state.schedule = getBase().map(rowFromBase);
+      applyAutoHolidays();
+      renderScheduleEditor();
+      commit();
+      showToast('いつもの時間割に戻しました', {
+        actionLabel: '元に戻す',
+        onAction: () => { state.schedule = before; renderScheduleEditor(); commit(); }
+      });
+    });
+
+    // parent templates
+    document.querySelectorAll('[data-tpl]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const ta = $('parentsNote');
+        const tpl = PARENT_TEMPLATES[b.dataset.tpl];
+        const cur = ta.value;
+        const pos = document.activeElement === ta ? ta.selectionStart : cur.length;
+        const before = cur.slice(0, pos);
+        const after = cur.slice(pos);
+        const sep = before && !before.endsWith('\n') ? '\n' : '';
+        ta.value = `${before}${sep}${tpl}${after}`;
+        state.parentsNote = ta.value;
+        commit();
+        ta.focus();
+        const caret = (before + sep + tpl).length;
+        ta.setSelectionRange(caret, caret);
+      });
+    });
+
+    // AI
+    els.btnToggleAi.addEventListener('click', () => {
+      const open = els.aiPanel.hidden;
+      els.aiPanel.hidden = !open;
+      els.btnToggleAi.setAttribute('aria-expanded', String(open));
+      els.btnToggleAi.textContent = open ? '✕ AI作成パネルを閉じる' : '✨ 箇条書きメモからAIで文章を作る';
+      if (open) updateAiMode();
+    });
+    $('btnGenerateAi').addEventListener('click', async (e) => {
+      const key = getApiKey();
+      if (!key) { updateAiMode(); return; }
+      if (!state.ai.articleMemo.trim() && !confirm('記事のメモが空です。おまかせで作成しますか？')) return;
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      setAiStatus('✨ 作成中です…（10秒ほどかかります）', 'loading');
+      try {
+        const text = await callGemini(key, buildPrompt(false));
+        applyAi(parseAi(text));
+        setAiStatus('✓ 作成してお便りに入れました。内容を確認して整えてください。', 'success');
+      } catch (err) {
+        setAiStatus(`うまく作成できませんでした：${err.message}`, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    $('btnCopyPrompt').addEventListener('click', async () => {
+      const text = buildPrompt(true);
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (_) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      setAiStatus('📋 コピーしました。AIに貼り付けて送信してください。', 'success');
+    });
+    els.aiPasteBox.addEventListener('paste', () => {
+      setTimeout(() => {
+        const parsed = parseAi(els.aiPasteBox.value);
+        if (parsed && (parsed.title || parsed.parentsNote || parsed.article)) {
+          applyAi(parsed);
+          els.aiPasteBox.value = '';
+          setAiStatus('✓ お便りに入れました。内容を確認して整えてください。', 'success');
+        }
+      }, 30);
+    });
+
+    // header buttons
+    $('btnIssueMenu').addEventListener('click', openIssueModal);
+    $('btnSettings').addEventListener('click', () => openModal(els.settingsModal));
+    els.btnChecks.addEventListener('click', openExport);
+    $('btnNextIssue').addEventListener('click', createNextIssue);
+    $('btnSaveHistory').addEventListener('click', () => { saveToHistory(); renderHistory(); showToast(`第${state.issueNumber}号を保存しました`); });
+
+    // export
+    document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => doExport(b.dataset.export, b)));
+
+    // modals close
+    document.querySelectorAll('.modal').forEach((m) => {
+      m.addEventListener('click', (e) => {
+        if (e.target === m || e.target.closest('[data-close]')) closeModal(m);
+      });
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') document.querySelectorAll('.modal').forEach((m) => { if (!m.hidden) closeModal(m); });
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveNow();
+        saveToHistory();
+        showToast(`第${state.issueNumber}号を保存しました`);
+      }
+    });
+
+    // settings: API key
+    els.geminiApiKey.value = getApiKey();
+    els.geminiApiKey.addEventListener('input', () => {
+      localStorage.setItem(KEYS.api, els.geminiApiKey.value.trim());
+      updateAiMode();
+    });
+    $('btnToggleKey').addEventListener('click', (e) => {
+      const show = els.geminiApiKey.type === 'password';
+      els.geminiApiKey.type = show ? 'text' : 'password';
+      e.currentTarget.textContent = show ? '隠す' : '表示';
+    });
+
+    // settings: backup
+    $('btnExportJson').addEventListener('click', () => {
+      const payload = { version: 2, exportedAt: new Date().toISOString(), currentState: state, defaultSchedule: getBase(), history: loadHistory() };
+      download(new Blob([JSON.stringify(payload)], { type: 'application/json' }), `学級通信HOME_バックアップ_${toISO(new Date())}.json`);
+      showToast('バックアップを保存しました');
+    });
+    $('importJsonInput').addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const p = JSON.parse(reader.result);
+          if (p.defaultSchedule) localStorage.setItem(KEYS.base, JSON.stringify(p.defaultSchedule));
+          if (Array.isArray(p.history)) saveHistoryList(p.history);
+          if (p.currentState) state = migrate(p.currentState);
+          syncInputs();
+          commit();
+          showToast('バックアップから復元しました');
+        } catch (_) {
+          showToast('バックアップファイルを読み込めませんでした', { error: true });
+        }
+      };
+      reader.readAsText(f);
+      e.target.value = '';
+    });
+    $('btnResetAll').addEventListener('click', () => {
+      if (!confirm('すべてのデータ（保存した号・いつもの時間割・APIキーを含む）を削除して初期状態に戻しますか？\nこの操作は元に戻せません。')) return;
+      Object.values(KEYS).forEach((k) => localStorage.removeItem(k));
+      location.reload();
+    });
+
+    // zoom
+    els.btnZoomToggle.addEventListener('click', () => { zoomFull = !zoomFull; updateZoom(); });
+    window.addEventListener('resize', updateZoom);
+  }
+
+  // ---------- Init ----------
 
   // ---------- Cloud Sync (Supabase) ----------
   function cloudLoadSession() {
     try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY_CLOUD) || 'null');
+      return JSON.parse(localStorage.getItem(KEYS.cloud) || 'null');
     } catch (_) {
       return null;
     }
   }
 
   function cloudStoreSession(session) {
-    if (session) localStorage.setItem(STORAGE_KEY_CLOUD, JSON.stringify(session));
-    else localStorage.removeItem(STORAGE_KEY_CLOUD);
+    if (session) localStorage.setItem(KEYS.cloud, JSON.stringify(session));
+    else localStorage.removeItem(KEYS.cloud);
   }
 
   let cloudSession = cloudLoadSession();
@@ -1339,35 +1593,35 @@ ${parentsMemo || '（指定なし：日頃の感謝と体調管理・持ち物�
     const inn = document.getElementById('cloudLoggedIn');
     if (!out || !inn) return;
     if (cloudSession) {
-      out.classList.add('hidden');
-      inn.classList.remove('hidden');
+      out.hidden = true;
+      inn.hidden = false;
       const emailEl = document.getElementById('cloudUserEmail');
       if (emailEl) emailEl.textContent = cloudSession.email || '';
       renderCloudHistory();
     } else {
-      out.classList.remove('hidden');
-      inn.classList.add('hidden');
+      out.hidden = false;
+      inn.hidden = true;
     }
   }
 
   async function renderCloudHistory() {
     const listEl = document.getElementById('cloudHistoryList');
     if (!listEl || !cloudSession) return;
-    listEl.innerHTML = '<p class="help-text">読み込み中…</p>';
+    listEl.innerHTML = '<p class="muted small">読み込み中…</p>';
     let rows;
     try {
       rows = await cloudRest(
         'GET',
-        'newsletter_issues?select=id,issue_number,issue_date,article_title,saved_at,data&order=created_at.desc&limit=30'
+        'newsletter_issues?select=id,issue_number,issue_date,article_title,saved_at,data&order=created_at.desc&limit=40'
       );
     } catch (err) {
       console.warn('cloud history fetch failed:', err);
-      listEl.innerHTML = '<p class="help-text">クラウド履歴を取得できませんでした。</p>';
+      listEl.innerHTML = '<p class="muted small">クラウド履歴を取得できませんでした。</p>';
       return;
     }
     listEl.innerHTML = '';
     if (!rows || rows.length === 0) {
-      listEl.innerHTML = '<p class="help-text">クラウドに保存された号はまだありません。</p>';
+      listEl.innerHTML = '<p class="muted small">クラウドに保存された号はまだありません。</p>';
       return;
     }
     rows.forEach((row) => {
@@ -1380,49 +1634,35 @@ ${parentsMemo || '（指定なし：日頃の感謝と体調管理・持ち物�
       };
       const rowEl = document.createElement('div');
       rowEl.className = 'history-row';
-
-      const info = document.createElement('div');
-      info.className = 'history-row-info';
-      info.innerHTML = `<strong>第${item.issueNumber}号「${escapeHtml(item.articleTitle || '無題')}」</strong>
-        <span>${formatJapaneseEraDate(item.issueDate)}（保存: ${item.savedAt || ''}）</span>`;
-      rowEl.appendChild(info);
-
-      const btns = document.createElement('div');
-      btns.className = 'history-row-btns';
-
-      const loadBtn = document.createElement('button');
-      loadBtn.type = 'button';
-      loadBtn.className = 'btn btn-sm btn-primary';
-      loadBtn.textContent = '読み込む';
-      loadBtn.addEventListener('click', () => {
-        if (!confirm(`第${item.issueNumber}号を読み込みますか？（現在の編集内容は上書きされます）`)) return;
-        state = clone(item.data);
-        saveState();
-        syncInputsFromState();
-        renderPreview();
-        els.historyModal.classList.add('hidden');
-        showToast(`第${item.issueNumber}号を読み込みました`);
+      rowEl.innerHTML = `<div class="history-info"><b>第${item.issueNumber}号　${escapeHtml(item.articleTitle || '（タイトルなし）')}</b><span>${escapeHtml(eraDate(item.issueDate))}・保存 ${escapeHtml(item.savedAt || '')}</span></div><div class="history-btns"></div>`;
+      const btns = rowEl.querySelector('.history-btns');
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'btn btn-outline btn-sm';
+      open.textContent = '開く';
+      open.addEventListener('click', () => {
+        saveToHistory();
+        state = migrate(clone(item.data));
+        syncInputs();
+        commit();
+        closeModal(els.issueModal);
+        showToast(`第${item.issueNumber}号を開きました（編集中だった号は保存済み）`);
       });
-
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.className = 'btn btn-sm btn-ghost';
-      delBtn.style.color = '#dc2626';
-      delBtn.textContent = '削除';
-      delBtn.addEventListener('click', async () => {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn-ghost btn-sm danger';
+      del.textContent = '削除';
+      del.addEventListener('click', async () => {
         if (!confirm(`第${item.issueNumber}号をクラウドから削除しますか？`)) return;
         try {
           await cloudRest('DELETE', `newsletter_issues?id=eq.${row.id}`);
           renderCloudHistory();
         } catch (err) {
           console.warn('cloud delete failed:', err);
-          showToast('クラウドからの削除に失敗しました', true);
+          showToast('クラウドからの削除に失敗しました', { error: true });
         }
       });
-
-      btns.appendChild(loadBtn);
-      btns.appendChild(delBtn);
-      rowEl.appendChild(btns);
+      btns.append(open, del);
       listEl.appendChild(rowEl);
     });
   }
@@ -1466,14 +1706,19 @@ ${parentsMemo || '（指定なし：日頃の感謝と体調管理・持ち物�
     }
   }
 
-  // ---------- Init ----------
   function init() {
-    syncInputsFromState();
-    renderPreview();
+    applyAutoHolidays();
+    syncInputs();
     bindEvents();
     bindCloudEvents();
     renderCloudSection();
-    requestAnimationFrame(updateZoom);
+    render();
+    updateZoom();
+    updateActiveStep();
+    els.welcome.hidden = !isFirstRun && !!localStorage.getItem(KEYS.welcome) ? true : !!localStorage.getItem(KEYS.welcome);
+    saveNow();
+    // フォント読み込み後に再計測（はみ出し判定のずれ防止）
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => render());
   }
 
   document.addEventListener('DOMContentLoaded', init);

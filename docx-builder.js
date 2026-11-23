@@ -511,7 +511,7 @@ window.HomeDocxBuilder = (() => {
     const weekDates = data.weekDates || [];
     const monthSpans = data.monthSpans || [5, 0, 0, 0, 0];
 
-    const dayRowsXml = (data.schedule || []).map((row, idx) => {
+    const dayRowsXml = (data.scheduleRows || data.schedule || []).map((row, idx) => {
       const span = monthSpans[idx];
       const monthMergeXml = span > 0 ? '<w:vMerge w:val="restart"/>' : '<w:vMerge/>';
       const monthText = span > 0 ? (weekDates[idx]?.month || '') : '';
@@ -525,6 +525,23 @@ window.HomeDocxBuilder = (() => {
         <w:tcPr><w:tcW w:w="${colWidths[1]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>
         ${makeParagraph(weekDates[idx]?.dayLabel || '', { align: 'center', sizeHalfPt: 17, spaceAfter: 0, line: 195 })}
       </w:tc>`;
+
+      const noteText = row.noteText !== undefined ? row.noteText : (row.note || '');
+      if (row.kind && row.kind !== 'normal') {
+        const spanWidth = colWidths.slice(2, 11).reduce((a, b) => a + Number(b), 0);
+        const spanCell = `<w:tc>
+        <w:tcPr><w:tcW w:w="${spanWidth}" w:type="dxa"/><w:gridSpan w:val="9"/><w:vAlign w:val="center"/></w:tcPr>
+        ${makeParagraph(row.spanText || '', { align: 'center', sizeHalfPt: 17, bold: true, spaceAfter: 0, line: 195 })}
+      </w:tc>`;
+        const spanNoteCell = `<w:tc>
+        <w:tcPr><w:tcW w:w="${colWidths[11]}" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>
+        ${makeMultilineParagraphs(noteText, { align: 'left', sizeHalfPt: 16, spaceAfter: 0, line: 195 })}
+      </w:tc>`;
+        return `<w:tr>
+        <w:trPr><w:trHeight w:val="580" w:hRule="atLeast"/></w:trPr>
+        ${monthCell}${dayCell}${spanCell}${spanNoteCell}
+      </w:tr>`;
+      }
 
       const periodCells = row.periods.map((subj, pIdx) => {
         const lines = formatPeriodLines(subj);
@@ -547,7 +564,7 @@ window.HomeDocxBuilder = (() => {
 
       const noteCell = `<w:tc>
         <w:tcPr><w:tcW w:w="${colWidths[11]}" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>
-        ${makeMultilineParagraphs(row.note || '', { align: 'left', sizeHalfPt: 16, spaceAfter: 0, line: 195 })}
+        ${makeMultilineParagraphs(noteText, { align: 'left', sizeHalfPt: 16, spaceAfter: 0, line: 195 })}
       </w:tc>`;
 
       return `<w:tr>
