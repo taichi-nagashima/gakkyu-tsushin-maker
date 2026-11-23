@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HOME 学級通信メーカー</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- トップツールバー -->
+  <header class="app-header no-print">
+    <div class="app-brand">
+      <span class="brand-badge">HOME</span>
+      <div>
+        <h1>学級通信メーカー</h1>
+        <p class="brand-sub">箇条書きメモからAI文章生成・時間割自動入力・Word / PDF / 画像出力</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button type="button" class="btn btn-ghost" id="btnNextIssue" title="号数を+1、発行日を翌週に進めます">
+        ＋ 次の号を作る
+      </button>
+      <button type="button" class="btn btn-ghost" id="btnHistory" title="保存した過去の号を読み込み・管理">
+        履歴・保存
+      </button>
+      <button type="button" class="btn btn-ghost" id="btnSample" title="記入例を読み込んでプレビュー確認">
+        記入例を入れる
+      </button>
+      <div class="export-group">
+        <button type="button" class="btn btn-word" id="btnExportDocx">
+          📄 Word (.docx)
+        </button>
+        <button type="button" class="btn btn-image" id="btnExportPng">
+          🖼️ 画像 (LINE用)
+        </button>
+        <button type="button" class="btn btn-pdf" id="btnPrintPdf">
+          🖨️ PDF / 印刷
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- メイン2ペインレイアウト -->
+  <main class="app-main">
+    <!-- 左ペイン：入力エディタ -->
+    <aside class="editor-pane no-print">
+      <nav class="editor-tabs" role="tablist">
+        <button type="button" class="tab-btn active" data-tab="basic">基本・記事</button>
+        <button type="button" class="tab-btn" data-tab="ai">✨ AI作成</button>
+        <button type="button" class="tab-btn" data-tab="photos">📷 写真</button>
+        <button type="button" class="tab-btn" data-tab="schedule">📅 来週の予定</button>
+      </nav>
+
+      <div class="editor-scroll">
+        <!-- タブ1：基本情報・記事・保護者向け -->
+        <section class="tab-panel active" id="tab-basic">
+          <div class="card">
+            <div class="card-header">
+              <h2>号数・発行日</h2>
+              <span class="hint-pill">来週の予定日も自動連動</span>
+            </div>
+            <div class="form-grid-2">
+              <label class="field">
+                <span>号数</span>
+                <div class="input-inline">
+                  <span>第</span>
+                  <input type="number" id="issueNumber" min="1" max="999" value="1" />
+                  <span>号</span>
+                </div>
+              </label>
+              <label class="field">
+                <span>発行日</span>
+                <input type="date" id="issueDate" />
+              </label>
+            </div>
+            <div class="auto-date-preview" id="issueDateDisplay">令和8年〇〇月〇〇日(金) 発行</div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>メイン記事（左側）</h2>
+              <button type="button" class="btn-link" id="btnJumpToAi1">✨ AIで書く</button>
+            </div>
+            <label class="field">
+              <span>タイトル</span>
+              <input type="text" id="articleTitle" placeholder="例：合唱コンクールに向けて本格始動！" />
+            </label>
+            <label class="field">
+              <span>記事本文</span>
+              <textarea id="articleBody" rows="10" placeholder="ここに記事本文を入力します。左上の「✨ AI作成」タブを使うと、箇条書きメモから自動で文章を作成できます。"></textarea>
+            </label>
+            <div class="field-meta">
+              <span id="articleCharCount">0文字</span>
+              <label class="font-size-control">
+                <span>文字サイズ:</span>
+                <select id="articleFontSize">
+                  <option value="11.5">小 (11.5px)</option>
+                  <option value="12.5">やや小 (12.5px)</option>
+                  <option value="13.5" selected>標準 (13.5px)</option>
+                  <option value="15">大 (15px)</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>★保護者の皆様へ★（右中央）</h2>
+              <button type="button" class="btn-link" id="btnJumpToAi2">✨ AIで書く</button>
+            </div>
+            <label class="field">
+              <span>お知らせ内容</span>
+              <textarea id="parentsNote" rows="5" placeholder="例：来週の水曜日は授業参観があります。上履きをご持参ください。"></textarea>
+            </label>
+            <div class="field-meta">
+              <span id="parentsCharCount">0文字</span>
+              <label class="font-size-control">
+                <span>文字サイズ:</span>
+                <select id="parentsFontSize">
+                  <option value="11">小 (11px)</option>
+                  <option value="12" selected>標準 (12px)</option>
+                  <option value="13.5">大 (13.5px)</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <details class="card collapsible">
+            <summary class="card-header clickable">
+              <h2>学校名・クラス・発行者設定</h2>
+              <span class="chevron">▼</span>
+            </summary>
+            <div class="collapsible-body">
+              <label class="field">
+                <span>通信ロゴ名</span>
+                <input type="text" id="logoText" value="HOME" />
+              </label>
+              <label class="field">
+                <span>学校名</span>
+                <input type="text" id="schoolName" value="川崎市立野川中学校" />
+              </label>
+              <label class="field">
+                <span>クラス・通信名</span>
+                <input type="text" id="className" value="３年３組 学級通信" />
+              </label>
+              <label class="field">
+                <span>発行者</span>
+                <input type="text" id="publisherName" value="永嶋 裕太" />
+              </label>
+            </div>
+          </details>
+        </section>
+
+        <!-- タブ2：AI文章作成 -->
+        <section class="tab-panel" id="tab-ai">
+          <div class="card ai-card">
+            <div class="card-header">
+              <h2>✨ 箇条書きメモから自動文章作成</h2>
+            </div>
+            <p class="privacy-note">
+              🔒 <strong>個人情報への配慮：</strong>生徒の氏名など個人を特定できる情報は入力せず、「生徒たち」「Aさん」等の表現にしてください。
+            </p>
+
+            <label class="field">
+              <span>記事にしたいメモ（箇条書きでOK）</span>
+              <textarea id="aiArticleMemo" rows="5" placeholder="例：&#10;・今週から体育祭の練習がスタート&#10;・リレーのバトンパスを休み時間も自主練していた&#10;・声を掛け合う姿が増えてクラスの一体感が出てきた&#10;・水分補給と早寝早起きを心がけてほしい"></textarea>
+            </label>
+
+            <label class="field">
+              <span>★保護者の皆様へ★ に書きたいメモ（任意）</span>
+              <textarea id="aiParentsMemo" rows="3" placeholder="例：&#10;・来週火曜までに進路希望調査の提出をお願いします&#10;・体操服の洗濯が間に合わない場合はジャージ可"></textarea>
+            </label>
+
+            <div class="form-grid-2">
+              <label class="field">
+                <span>文章の雰囲気</span>
+                <select id="aiTone">
+                  <option value="warm">温かく親しみやすい（標準）</option>
+                  <option value="energetic">元気で前向き・生徒を励ます</option>
+                  <option value="formal">丁寧・保護者向けしっかり</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>記事の文字数めやす</span>
+                <select id="aiLength">
+                  <option value="short">短め（250〜350字）</option>
+                  <option value="medium" selected>標準（400〜550字）</option>
+                  <option value="long">長め（600〜750字）</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="ai-mode-box">
+              <h3>方法1：ボタン1つで自動生成（Gemini API）</h3>
+              <div class="api-key-row">
+                <input type="password" id="geminiApiKey" placeholder="Gemini APIキー（ブラウザ内のみに保存）" autocomplete="off" />
+                <button type="button" class="btn btn-sm btn-ghost" id="btnToggleKey">表示</button>
+              </div>
+              <p class="help-text">
+                Google AI Studio で無料取得したキーを入力すると、ここから直接文章を生成できます。キーはPCのブラウザ内にのみ保存されます。
+              </p>
+              <button type="button" class="btn btn-primary btn-block" id="btnGenerateAi">
+                ✨ AIでタイトル・記事・保護者向け文を自動生成
+              </button>
+              <div id="aiStatus" class="status-msg" aria-live="polite"></div>
+            </div>
+
+            <div class="ai-mode-box secondary">
+              <h3>方法2：APIキー不要（普段のChatGPT / Geminiを使う）</h3>
+              <p class="help-text">
+                下のボタンで専用プロンプトをコピーして普段のAIに貼り付け、返ってきた文章をここに貼るだけで自動反映されます。
+              </p>
+              <button type="button" class="btn btn-outline btn-block" id="btnCopyPrompt">
+                📋 AI用プロンプトをコピー
+              </button>
+              <label class="field mt-8">
+                <span>AIの返答を貼り付け</span>
+                <textarea id="aiPasteResult" rows="4" placeholder="AIから返ってきたテキストをここに貼り付けて「お便りに反映」を押してください"></textarea>
+              </label>
+              <button type="button" class="btn btn-secondary btn-block" id="btnApplyPastedAi">
+                📥 貼り付けた内容をタイトル・記事・保護者欄に反映
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- タブ3：フォトコーナー -->
+        <section class="tab-panel" id="tab-photos">
+          <div class="card">
+            <div class="card-header">
+              <h2>📷 フォトコーナー（最大4枚）</h2>
+              <button type="button" class="btn-link danger" id="btnClearPhotos">すべて削除</button>
+            </div>
+            <label class="field">
+              <span>コーナー見出し</span>
+              <input type="text" id="photoCornerTitle" value="フォトコーナー" />
+            </label>
+            <div class="dropzone" id="photoDropzone">
+              <input type="file" id="photoInput" accept="image/*" multiple hidden />
+              <div class="dropzone-icon">📸</div>
+              <p><strong>ここに写真をドラッグ＆ドロップ</strong></p>
+              <p class="help-text">またはクリックして写真を選択（1〜4枚を自動で綺麗に配置します）</p>
+            </div>
+            <div id="photoList" class="photo-list"></div>
+          </div>
+        </section>
+
+        <!-- タブ4：来週の予定 -->
+        <section class="tab-panel" id="tab-schedule">
+          <div class="card">
+            <div class="card-header">
+              <h2>📅 来週の予定ヘッダー</h2>
+              <button type="button" class="btn-link" id="btnAutoCalcDates">発行日から自動計算</button>
+            </div>
+            <div class="form-grid-2">
+              <label class="field">
+                <span>開始日（月）</span>
+                <input type="date" id="scheduleStartDate" />
+              </label>
+              <label class="field">
+                <span>要エプロン持参</span>
+                <input type="text" id="apronGroups" placeholder="例：1・2・3" value="〇・〇・〇" />
+              </label>
+            </div>
+            <div class="quick-apron">
+              <span>クイック選択：</span>
+              <button type="button" class="chip" data-apron="1・2・3">1・2・3班</button>
+              <button type="button" class="chip" data-apron="4・5・6">4・5・6班</button>
+              <button type="button" class="chip" data-apron="1・3・5">1・3・5班</button>
+              <button type="button" class="chip" data-apron="2・4・6">2・4・6班</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2>時間割・給/清/部・備考</h2>
+              <div class="preset-actions">
+                <button type="button" class="btn-link" id="btnResetSchedule" title="保存済みの基本時間割に戻す">基本に戻す</button>
+                <button type="button" class="btn-link" id="btnSaveDefaultSchedule" title="今の時間割を基本時間割として保存">基本として保存</button>
+              </div>
+            </div>
+            <p class="help-text mb-8">
+              💡 <strong>給・清・部</strong> はクリックで <code>〇 → × → △ → －</code> と切り替わります。1〜6限は2文字で自動改行されます（例：<code>社臼</code>→縦2行）。
+            </p>
+            <div id="scheduleEditorList" class="schedule-editor-list"></div>
+          </div>
+        </section>
+      </div>
+    </aside>
+
+    <!-- 右ペイン：リアルタイムA4横プレビュー -->
+    <section class="preview-pane">
+      <div class="preview-toolbar no-print">
+        <div class="preview-info">
+          <span class="dot-live"></span>
+          <span>A4横 リアルタイムプレビュー（そのままWord / PDF / 画像になります）</span>
+        </div>
+        <div class="zoom-controls">
+          <button type="button" class="btn-zoom" id="btnZoomOut" title="縮小">－</button>
+          <span id="zoomLabel">自動</span>
+          <button type="button" class="btn-zoom" id="btnZoomIn" title="拡大">＋</button>
+          <button type="button" class="btn-zoom" id="btnZoomFit" title="画面に合わせる">フィット</button>
+        </div>
+      </div>
+
+      <div class="preview-viewport" id="previewViewport">
+        <div class="sheet-wrapper" id="sheetWrapper">
+          <!-- A4横（297mm × 210mm 比率：1122px × 794px） -->
+          <div class="newsletter-sheet" id="newsletterSheet">
+            <div class="sheet-frame">
+              <!-- 左カラム -->
+              <div class="col-left">
+                <div class="header-box">
+                  <div class="header-logo-cell">
+                    <span class="home-logo-text" id="pvLogoText">HOME</span>
+                    <!-- 赤い屋根の家のオリジナルSVGイラスト -->
+                    <svg class="house-svg" id="houseSvg" viewBox="0 0 110 92" xmlns="http://www.w3.org/2000/svg" aria-label="家のイラスト">
+                      <!-- 芝生・土台 -->
+                      <rect x="6" y="84" width="98" height="4" rx="2" fill="#70AD47" />
+                      <!-- 左の植え込み -->
+                      <circle cx="15" cy="76" r="9" fill="#6BB33F" />
+                      <circle cx="22" cy="79" r="7" fill="#5CA033" />
+                      <circle cx="12" cy="80" r="6" fill="#7AC34B" />
+                      <!-- 花（赤・黄） -->
+                      <circle cx="13" cy="74" r="1.8" fill="#FFF200" />
+                      <circle cx="18" cy="78" r="1.8" fill="#FF4B4B" />
+                      <circle cx="10" cy="81" r="1.5" fill="#FF75A0" />
+                      <!-- 家の壁（白い本体） -->
+                      <rect x="24" y="42" width="72" height="44" fill="#FFFFFF" stroke="#5A4A42" stroke-width="2" />
+                      <!-- 赤い屋根（台形＋瓦ライン） -->
+                      <polygon points="16,44 28,12 92,12 104,44" fill="#E3262E" stroke="#A61920" stroke-width="2" stroke-linejoin="round" />
+                      <!-- 屋根の横線・縦線ディテール -->
+                      <line x1="22" y1="28" x2="98" y2="28" stroke="#F46A6A" stroke-width="1.3" opacity="0.7" />
+                      <line x1="26" y1="19" x2="94" y2="19" stroke="#F46A6A" stroke-width="1.1" opacity="0.6" />
+                      <line x1="20" y1="36" x2="100" y2="36" stroke="#F46A6A" stroke-width="1.3" opacity="0.7" />
+                      <!-- ドア -->
+                      <rect x="33" y="54" width="16" height="32" rx="1.5" fill="#B5461E" stroke="#6B270F" stroke-width="1.6" />
+                      <circle cx="45.5" cy="71" r="1.8" fill="#FFE066" />
+                      <!-- 青い窓2つ -->
+                      <rect x="57" y="53" width="13" height="14" rx="1" fill="#66B2FF" stroke="#3B5998" stroke-width="1.5" />
+                      <rect x="75" y="53" width="13" height="14" rx="1" fill="#66B2FF" stroke="#3B5998" stroke-width="1.5" />
+                      <line x1="63.5" y1="53" x2="63.5" y2="67" stroke="#FFFFFF" stroke-width="1" opacity="0.7" />
+                      <line x1="81.5" y1="53" x2="81.5" y2="67" stroke="#FFFFFF" stroke-width="1" opacity="0.7" />
+                      <!-- 窓下の花壇プランター -->
+                      <rect x="54" y="76" width="38" height="10" rx="1" fill="#A06035" stroke="#5E351B" stroke-width="1.4" />
+                      <ellipse cx="62" cy="75" rx="7" ry="4" fill="#6BB33F" />
+                      <ellipse cx="73" cy="74" rx="8" ry="4.5" fill="#5CA033" />
+                      <ellipse cx="84" cy="75" rx="7" ry="4" fill="#6BB33F" />
+                      <circle cx="60" cy="74" r="1.7" fill="#FF5252" />
+                      <circle cx="69" cy="73" r="1.8" fill="#FFD740" />
+                      <circle cx="77" cy="74" r="1.7" fill="#FF80AB" />
+                      <circle cx="85" cy="74" r="1.7" fill="#FFD740" />
+                    </svg>
+                  </div>
+                  <div class="header-meta-cell">
+                    <div id="pvSchoolName">川崎市立野川中学校</div>
+                    <div id="pvClassIssue">３年３組 学級通信 第１号</div>
+                    <div id="pvPublisher">発行者 永嶋 裕太</div>
+                    <div id="pvIssueDate">令和8年〇〇月〇〇日(金) 発行</div>
+                  </div>
+                </div>
+
+                <h2 class="pv-article-title" id="pvArticleTitle">タイトル</h2>
+                <div class="pv-article-body" id="pvArticleBody">記事</div>
+              </div>
+
+              <!-- 右カラム -->
+              <div class="col-right">
+                <!-- ① フォトコーナー -->
+                <div class="photo-corner-box">
+                  <div class="box-title" id="pvPhotoTitle">フォトコーナー</div>
+                  <div class="photo-grid count-0" id="pvPhotoGrid">
+                    <div class="photo-empty-hint no-print-placeholder">
+                      左の「📷 写真」タブから写真を追加できます
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ② ★保護者の皆様へ★ -->
+                <div class="parents-box">
+                  <div class="box-title">★保護者の皆様へ★</div>
+                  <div class="pv-parents-body" id="pvParentsBody"></div>
+                </div>
+
+                <!-- ③ 来週の予定表 -->
+                <div class="schedule-box">
+                  <table class="schedule-table" id="pvScheduleTable">
+                    <thead>
+                      <tr>
+                        <th colspan="12" class="schedule-banner" id="pvScheduleBanner">
+                          来週の予定(〇〇月〇〇日～〇〇月〇〇日)　要エプロン持参〇・〇・〇班
+                        </th>
+                      </tr>
+                      <tr class="schedule-col-headers">
+                        <th class="col-month">月</th>
+                        <th class="col-day">日</th>
+                        <th class="col-period">1</th>
+                        <th class="col-period">2</th>
+                        <th class="col-period">3</th>
+                        <th class="col-period">4</th>
+                        <th class="col-period">5</th>
+                        <th class="col-period">6</th>
+                        <th class="col-flag">給</th>
+                        <th class="col-flag">清</th>
+                        <th class="col-flag">部</th>
+                        <th class="col-note">備考</th>
+                      </tr>
+                    </thead>
+                    <tbody id="pvScheduleBody">
+                      <!-- JSで自動描画 -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 履歴・保存モーダル -->
+  <div class="modal-backdrop hidden" id="historyModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>履歴・バックアップ管理</h2>
+        <button type="button" class="modal-close" id="btnCloseHistory">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="history-actions">
+          <button type="button" class="btn btn-primary" id="btnSaveCurrentToHistory">💾 現在の号を履歴に保存</button>
+          <button type="button" class="btn btn-outline" id="btnExportJson">⬇️ バックアップ書き出し (JSON)</button>
+          <label class="btn btn-outline">
+            ⬆️ バックアップ読込
+            <input type="file" id="importJsonInput" accept=".json" hidden />
+          </label>
+        </div>
+        <h3 class="mt-16">保存済みの号</h3>
+        <div id="historyList" class="history-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- トースト通知 -->
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <script src="docx-builder.js"></script>
+  <script src="png-exporter.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
