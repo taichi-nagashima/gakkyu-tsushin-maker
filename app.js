@@ -8,7 +8,7 @@
   // ---------- Constants ----------
   // キャッシュ対策バージョン：index.html の <meta name="asset-version"> と各 ?v= と必ず同じ値にする
   // （更新時は index.html と app.js の現在の値をまとめて置換。ずれているとコンソールに警告が出ます）
-  const APP_VERSION = '2026112302';
+  const APP_VERSION = '2026112501';
   const KEYS = {
     state: 'home_newsletter_state_v1',
     base: 'home_newsletter_default_schedule_v1',

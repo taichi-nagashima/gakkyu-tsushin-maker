@@ -888,32 +888,32 @@ input:focus, textarea:focus, select:focus {
 }
 .schedule-table th, .schedule-table td {
   border: 1px solid #222;
-  padding: 1px 2px;
+  padding: 3px 3px;
   text-align: center;
   vertical-align: middle;
 }
 .schedule-banner {
   text-align: left !important;
-  padding: 2px 6px !important;
+  padding: 3px 6px !important;
   font-size: 12px;
   font-weight: 700;
-  height: 24px;
+  height: 28px;
   white-space: nowrap;
   overflow: hidden;
 }
-.schedule-col-headers th { font-weight: 700; height: 22px; border-bottom: 1.5px solid #111; }
+.schedule-col-headers th { font-weight: 700; height: 26px; border-bottom: 1.5px solid #111; }
 .cell-month { font-weight: 700; font-size: 12px; }
 .cell-day { font-size: 11.5px; white-space: nowrap; }
-.cell-period { font-size: 11px; line-height: 1.15; white-space: pre-line; padding: 1px 0 !important; }
+.cell-period { font-size: 11px; line-height: 1.45; white-space: pre-line; padding: 3px 0 !important; }
 .cell-span { font-size: 12.5px; font-weight: 700; letter-spacing: 0.05em; }
 .cell-span.holiday { color: #b91c1c; }
 .cell-flag { font-size: 12.5px; }
 .cell-note {
   text-align: left !important;
   vertical-align: top !important;
-  padding: 2px 5px !important;
+  padding: 4px 6px !important;
   font-size: 10.5px;
-  line-height: 1.25;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
 }

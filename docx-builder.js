@@ -486,25 +486,26 @@ window.HomeDocxBuilder = (() => {
     </w:tbl>`;
 
     // ---------- 右カラム：③ 来週の予定表 ----------
-    // 列幅合計: 380 + 820 + 410*6 + 360*3 + 3160 = 7900
-    const colWidths = [380, 820, 410, 410, 410, 410, 410, 410, 360, 360, 360, 3160];
+    // 列幅合計: 380 + 820 + 440*6 + 360*3 + 2980 = 7900
+    // （1〜6限の列を広げて2文字の教科名に余裕を持たせ、その分を備考列から削る）
+    const colWidths = [380, 820, 440, 440, 440, 440, 440, 440, 360, 360, 360, 2980];
     const colHeaders = ['月', '日', '1', '2', '3', '4', '5', '6', '給', '清', '部', '備考'];
 
     const scheduleGridXml = colWidths.map((w) => `<w:gridCol w:w="${w}"/>`).join('');
 
     const bannerRowXml = `<w:tr>
-      <w:trPr><w:trHeight w:val="320" w:hRule="atLeast"/></w:trPr>
+      <w:trPr><w:trHeight w:val="340" w:hRule="atLeast"/></w:trPr>
       <w:tc>
         <w:tcPr><w:tcW w:w="7900" w:type="dxa"/><w:gridSpan w:val="12"/><w:vAlign w:val="center"/></w:tcPr>
-        ${makeParagraph(data.scheduleBannerText || '', { align: 'left', sizeHalfPt: 18, bold: true, spaceAfter: 0, line: 205 })}
+        ${makeParagraph(data.scheduleBannerText || '', { align: 'left', sizeHalfPt: 17, bold: true, spaceAfter: 0, line: 240 })}
       </w:tc>
     </w:tr>`;
 
     const headerRowXml = `<w:tr>
-      <w:trPr><w:trHeight w:val="290" w:hRule="atLeast"/></w:trPr>
+      <w:trPr><w:trHeight w:val="320" w:hRule="atLeast"/></w:trPr>
       ${colHeaders.map((h, i) => `<w:tc>
         <w:tcPr><w:tcW w:w="${colWidths[i]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>
-        ${makeParagraph(h, { align: 'center', sizeHalfPt: 18, bold: true, spaceAfter: 0, line: 195 })}
+        ${makeParagraph(h, { align: 'center', sizeHalfPt: 17, bold: true, spaceAfter: 0, line: 240 })}
       </w:tc>`).join('')}
     </w:tr>`;
 
@@ -518,12 +519,12 @@ window.HomeDocxBuilder = (() => {
 
       const monthCell = `<w:tc>
         <w:tcPr><w:tcW w:w="${colWidths[0]}" w:type="dxa"/>${monthMergeXml}<w:vAlign w:val="center"/></w:tcPr>
-        ${makeParagraph(monthText, { align: 'center', sizeHalfPt: 18, bold: true, spaceAfter: 0, line: 195 })}
+        ${makeParagraph(monthText, { align: 'center', sizeHalfPt: 17, bold: true, spaceAfter: 0, line: 240 })}
       </w:tc>`;
 
       const dayCell = `<w:tc>
         <w:tcPr><w:tcW w:w="${colWidths[1]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>
-        ${makeParagraph(weekDates[idx]?.dayLabel || '', { align: 'center', sizeHalfPt: 17, spaceAfter: 0, line: 195 })}
+        ${makeParagraph(weekDates[idx]?.dayLabel || '', { align: 'center', sizeHalfPt: 16, spaceAfter: 0, line: 240 })}
       </w:tc>`;
 
       const noteText = row.noteText !== undefined ? row.noteText : (row.note || '');
@@ -531,14 +532,14 @@ window.HomeDocxBuilder = (() => {
         const spanWidth = colWidths.slice(2, 11).reduce((a, b) => a + Number(b), 0);
         const spanCell = `<w:tc>
         <w:tcPr><w:tcW w:w="${spanWidth}" w:type="dxa"/><w:gridSpan w:val="9"/><w:vAlign w:val="center"/></w:tcPr>
-        ${makeParagraph(row.spanText || '', { align: 'center', sizeHalfPt: 17, bold: true, spaceAfter: 0, line: 195 })}
+        ${makeParagraph(row.spanText || '', { align: 'center', sizeHalfPt: 16, bold: true, spaceAfter: 0, line: 240 })}
       </w:tc>`;
         const spanNoteCell = `<w:tc>
         <w:tcPr><w:tcW w:w="${colWidths[11]}" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>
-        ${makeMultilineParagraphs(noteText, { align: 'left', sizeHalfPt: 16, spaceAfter: 0, line: 195 })}
+        ${makeMultilineParagraphs(noteText, { align: 'left', sizeHalfPt: 15, spaceAfter: 0, line: 240 })}
       </w:tc>`;
         return `<w:tr>
-        <w:trPr><w:trHeight w:val="580" w:hRule="atLeast"/></w:trPr>
+        <w:trPr><w:trHeight w:val="640" w:hRule="atLeast"/></w:trPr>
         ${monthCell}${dayCell}${spanCell}${spanNoteCell}
       </w:tr>`;
       }
@@ -551,24 +552,24 @@ window.HomeDocxBuilder = (() => {
         return `<w:tc>
           <w:tcPr><w:tcW w:w="${colWidths[2 + pIdx]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>
           <w:p>
-            <w:pPr><w:spacing w:before="0" w:after="0" w:line="195" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr>
-            <w:r>${rPr({ sizeHalfPt: 16 })}${runs}</w:r>
+            <w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr>
+            <w:r>${rPr({ sizeHalfPt: 15 })}${runs}</w:r>
           </w:p>
         </w:tc>`;
       }).join('');
 
       const flagCells = ['lunch', 'clean', 'club'].map((key, fIdx) => `<w:tc>
         <w:tcPr><w:tcW w:w="${colWidths[8 + fIdx]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>
-        ${makeParagraph(row[key] || '', { align: 'center', sizeHalfPt: 18, spaceAfter: 0, line: 195 })}
+        ${makeParagraph(row[key] || '', { align: 'center', sizeHalfPt: 17, spaceAfter: 0, line: 240 })}
       </w:tc>`).join('');
 
       const noteCell = `<w:tc>
         <w:tcPr><w:tcW w:w="${colWidths[11]}" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>
-        ${makeMultilineParagraphs(noteText, { align: 'left', sizeHalfPt: 16, spaceAfter: 0, line: 195 })}
+        ${makeMultilineParagraphs(noteText, { align: 'left', sizeHalfPt: 15, spaceAfter: 0, line: 240 })}
       </w:tc>`;
 
       return `<w:tr>
-        <w:trPr><w:trHeight w:val="580" w:hRule="atLeast"/></w:trPr>
+        <w:trPr><w:trHeight w:val="640" w:hRule="atLeast"/></w:trPr>
         ${monthCell}${dayCell}${periodCells}${flagCells}${noteCell}
       </w:tr>`;
     }).join('');
@@ -587,8 +588,8 @@ window.HomeDocxBuilder = (() => {
         </w:tblBorders>
         <w:tblLayout w:type="fixed"/>
         <w:tblCellMar>
-          <w:top w:w="22" w:type="dxa"/><w:left w:w="32" w:type="dxa"/>
-          <w:bottom w:w="22" w:type="dxa"/><w:right w:w="32" w:type="dxa"/>
+          <w:top w:w="36" w:type="dxa"/><w:left w:w="32" w:type="dxa"/>
+          <w:bottom w:w="36" w:type="dxa"/><w:right w:w="32" w:type="dxa"/>
         </w:tblCellMar>
       </w:tblPr>
       <w:tblGrid>${scheduleGridXml}</w:tblGrid>

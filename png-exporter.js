@@ -425,7 +425,7 @@ window.HomePngExporter = (() => {
         ctx.font = `400 10.5px ${FONT_FAMILY}`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        drawWrappedText(ctx, row.noteText || '', colXs[11] + 5, rowY + 3, colWidths[11] - 8, dayRowH - 4, 13);
+        drawWrappedText(ctx, row.noteText || '', colXs[11] + 5, rowY + 4, colWidths[11] - 8, dayRowH - 5, 15);
         return;
       }
 
@@ -437,7 +437,7 @@ window.HomePngExporter = (() => {
         if (lines.length === 1) {
           ctx.fillText(lines[0], cx, rowMidY);
         } else {
-          const lh = 13;
+          const lh = 15.5;
           const startY = rowMidY - ((lines.length - 1) * lh) / 2;
           lines.forEach((ln, lIdx) => {
             ctx.fillText(ln, cx, startY + lIdx * lh);
@@ -455,7 +455,7 @@ window.HomePngExporter = (() => {
       ctx.font = `400 10.5px ${FONT_FAMILY}`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      drawWrappedText(ctx, row.noteText !== undefined ? row.noteText : (row.note || ''), colXs[11] + 5, rowY + 3, colWidths[11] - 8, dayRowH - 4, 13);
+      drawWrappedText(ctx, row.noteText !== undefined ? row.noteText : (row.note || ''), colXs[11] + 5, rowY + 4, colWidths[11] - 8, dayRowH - 5, 15);
     });
     ctx.restore();
 
